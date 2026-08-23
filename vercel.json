@@ -7,16 +7,12 @@
   ],
   "routes": [
     {
-      "src": "/escrever-no-pdf-original/?",
-      "dest": "api/index.py"
-    },
-    {
-      "src": "/converter-pdf/?",
+      "src": "/escrever-no-pdf-original(.*)",
       "dest": "api/index.py"
     },
     {
       "src": "/(.*)",
-      "dest": "/$1"
+      "dest": "api/index.py"
     }
   ]
 }
