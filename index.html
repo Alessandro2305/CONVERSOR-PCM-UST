@@ -211,29 +211,23 @@
 
         <!-- Tabela de Exibição dos Dados -->
         <div class="table-container">
-            <div class="card">
-    <div class="card-header">
-        <h3>Resultados do Processamento</h3>
-        <span id="contadorItens">47 itens identificados</span>
-    </div>
-    
-    <!-- Div que recebe a rolagem -->
-    <div class="table-responsive">
-        <table>
-            <thead>
-                <tr>
-                    <th>STATUS</th>
-                    <th>CÓDIGO ORIGINAL</th>
-                    <th>CÓDIGO SOL (CONVERTIDO)</th>
-                    <th>DESCRIÇÃO DO ITEM</th>
-                </tr>
-            </thead>
-            <tbody id="tabelaDados">
-                <!-- Linhas preenchidas via JavaScript -->
-            </tbody>
-        </table>
-    </div>
-</div>
+            <div class="table-header">
+                <strong>Resultados do Processamento</strong>
+                <span id="contadorItens">0 itens identificados</span>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>STATUS</th>
+                        <th>CÓDIGO ORIGINAL</th>
+                        <th>CÓDIGO SOL (CONVERTIDO)</th>
+                        <th>DESCRIÇÃO DO ITEM</th>
+                    </tr>
+                </thead>
+                <tbody id="tabelaDados">
+                    <!-- Preenchido dinamicamente pelo JavaScript -->
+                </tbody>
+            </table>
         </div>
 
         

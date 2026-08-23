@@ -459,18 +459,37 @@ td {
     margin-top: 10px;
 }
 
-/* Contêiner da Tabela de Resultados */
-.table-responsive, 
-.card-tabela {
-    max-height: 450px; /* Ou a altura desejada */
-    overflow-y: auto;  /* Habilita a barra de rolagem vertical */
-    overflow-x: auto;  /* Mantém a rolagem horizontal caso a tela diminua */
+/* Limita a altura do contêiner da tabela e ativa o scroll */
+.table-wrapper {
+    max-height: 420px;       /* Altura máxima da tabela visível */
+    overflow-y: auto;        /* Ativa a barra de rolagem vertical quando necessário */
+    overflow-x: auto;        /* Ativa a rolagem horizontal caso a tela diminua */
 }
 
-/* Fixar o cabeçalho da tabela no topo enquanto rola (Opcional, mas melhora a navegação) */
-.table-responsive table thead th {
+/* Deixa o cabeçalho da tabela fixo durante a rolagem */
+.table-wrapper table thead th {
     position: sticky;
     top: 0;
-    background-color: #002b66; /* Mesma cor do seu cabeçalho azul */
-    z-index: 2;
+    z-index: 10;
+    background-color: #002b66; /* Cor do fundo do seu cabeçalho azul */
+}
+
+/* Estilização opcional e elegante da barra de rolagem (Chrome/Edge/Webkit) */
+.table-wrapper::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.table-wrapper::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
 }
