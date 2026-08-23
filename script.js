@@ -82,7 +82,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // Processar Arquivos
+   // Processar Arquivos
     btnProcessar?.addEventListener("click", async () => {
         const filePdf = pdfInput?.files[0];
         const fileExcel = excelInput?.files[0];
@@ -101,41 +101,27 @@ document.addEventListener("DOMContentLoaded", () => {
         btnProcessar.disabled = true;
 
         try {
-            // Rota atualizada com a barra no final "/escrever-no-pdf-original/" para bater com a API FastAPI
             const response = await fetch('/escrever-no-pdf-original/', {
                 method: 'POST',
                 body: formData
             });
 
             if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.detail || "Erro na resposta do servidor.");
+                throw new Error(`Erro no servidor: Status ${response.status}`);
             }
 
-            const data = await response.json();
+            // 1. Lê a resposta como arquivo binário (Blob) em vez de JSON
+            const blob = await response.blob();
 
-            // 1. Preenche a tabela e atualiza os cards no dashboard
-            renderizarTabelaEMetricas(data.itens || []);
-
-            // 2. Faz o download automático do PDF injetado (Base64)
-            if (data.pdf_base64) {
-                const byteCharacters = atob(data.pdf_base64);
-                const byteNumbers = new Array(byteCharacters.length);
-                for (let i = 0; i < byteCharacters.length; i++) {
-                    byteNumbers[i] = byteCharacters.charCodeAt(i);
-                }
-                const byteArray = new Uint8Array(byteNumbers);
-                const blob = new Blob([byteArray], { type: 'application/pdf' });
-
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'Orcamento_SOL.pdf';
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                window.URL.revokeObjectURL(url);
-            }
+            // 2. Cria URL temporária e aciona o download
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'Orcamento_SOL.pdf';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
 
             setStep(3);
 
