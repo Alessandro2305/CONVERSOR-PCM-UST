@@ -82,7 +82,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-   // Processar Arquivos
+    // Processar Arquivos
     btnProcessar?.addEventListener("click", async () => {
         const filePdf = pdfInput?.files[0];
         const fileExcel = excelInput?.files[0];
@@ -107,23 +107,34 @@ document.addEventListener("DOMContentLoaded", () => {
             });
 
             if (!response.ok) {
-                // Tenta extrair a mensagem de erro do servidor se houver
-                const errorText = await response.text();
-                throw new Error(errorText || "Erro no processamento do servidor.");
+                const errorData = await response.json();
+                throw new Error(errorData.detail || "Erro no processamento do servidor.");
             }
 
-            // Converte a resposta em BLOB explícito do tipo PDF
-            const blob = await response.blob();
-            const pdfBlob = new Blob([blob], { type: 'application/pdf' });
+            const data = await response.json();
 
-            const url = window.URL.createObjectURL(pdfBlob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'Orcamento_SOL.pdf';
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            window.URL.revokeObjectURL(url);
+            // 1. Popula a tabela e atualiza os cards na tela
+            renderizarTabelaEMetricas(data.itens || []);
+
+            // 2. Faz o download do PDF gerado a partir do Base64
+            if (data.pdf_base64) {
+                const byteCharacters = atob(data.pdf_base64);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], { type: 'application/pdf' });
+
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'Orcamento_SOL.pdf';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+            }
 
             setStep(3);
 
