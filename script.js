@@ -45,38 +45,38 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Atualiza as métricas no painel de cards
     function atualizarMetricas(total = 0, convertidos = 0, pendentes = 0, naoEncontrados = 0) {
-        mTotal.textContent = total;
-        mConvertidos.textContent = convertidos;
-        mPendentes.textContent = pendentes;
-        mNaoEncontrados.textContent = naoEncontrados;
-        contadorItens.textContent = `${total} itens identificados`;
+        if (mTotal) mTotal.textContent = total;
+        if (mConvertidos) mConvertidos.textContent = convertidos;
+        if (mPendentes) mPendentes.textContent = pendentes;
+        if (mNaoEncontrados) mNaoEncontrados.textContent = naoEncontrados;
+        if (contadorItens) contadorItens.textContent = `${total} itens identificados`;
     }
 
-    // Eventos de seleção de arquivo PDF
+    // Evento seleção de PDF
     pdfInput?.addEventListener("change", (e) => {
         const file = e.target.files[0];
         if (file) {
-            pdfName.textContent = file.name;
-            pdfSize.textContent = formatBytes(file.size);
-            pdfCheck.style.display = "block";
+            if (pdfName) pdfName.textContent = file.name;
+            if (pdfSize) pdfSize.textContent = formatBytes(file.size);
+            if (pdfCheck) pdfCheck.style.display = "block";
             verificarStatusUpload();
         }
     });
 
-    // Eventos de seleção de arquivo Excel
+    // Evento seleção de Excel
     excelInput?.addEventListener("change", (e) => {
         const file = e.target.files[0];
         if (file) {
-            excelName.textContent = file.name;
-            excelSize.textContent = formatBytes(file.size);
-            excelCheck.style.display = "block";
+            if (excelName) excelName.textContent = file.name;
+            if (excelSize) excelSize.textContent = formatBytes(file.size);
+            if (excelCheck) excelCheck.style.display = "block";
             verificarStatusUpload();
         }
     });
 
     function verificarStatusUpload() {
-        if (pdfInput.files[0] && excelInput.files[0]) {
-            setStep(2); // Muda Stepper para "Processar"
+        if (pdfInput?.files[0] && excelInput?.files[0]) {
+            setStep(2);
         } else {
             setStep(1);
         }
@@ -101,46 +101,55 @@ document.addEventListener("DOMContentLoaded", () => {
         btnProcessar.disabled = true;
 
         try {
-            const response = await fetch('/escrever-no-pdf-original/', {
+            const response = await fetch('/escrever-no-pdf-original', {
                 method: 'POST',
                 body: formData
             });
 
             if (!response.ok) {
-                throw new Error("Erro na resposta do servidor.");
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || "Erro na resposta do servidor.");
             }
 
-            // Se o servidor retornar o JSON com os dados extraídos/convertidos:
-            const contentType = response.headers.get("content-type");
-            if (contentType && contentType.includes("application/json")) {
-                const data = await response.json();
-                renderizarTabelaEMetricas(data.itens || []);
-            } else {
-                // Caso o backend devolva diretamente o arquivo PDF processado como Blob
-                const blob = await response.blob();
+            const data = await response.json();
+
+            // 1. Preenche a tabela e atualiza os cards no dashboard
+            renderizarTabelaEMetricas(data.itens || []);
+
+            // 2. Faz o download automático do PDF injetado (Base64)
+            if (data.pdf_base64) {
+                const byteCharacters = atob(data.pdf_base64);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], { type: 'application/pdf' });
+
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = 'resultado_processado.pdf';
+                a.download = 'Orcamento_SOL.pdf';
                 document.body.appendChild(a);
                 a.click();
                 a.remove();
                 window.URL.revokeObjectURL(url);
             }
 
-            setStep(3); // Stepper -> Revisar Resultados
+            setStep(3);
 
         } catch (error) {
             console.error("Erro no processamento:", error);
-            alert("Ocorreu um erro ao conectar com o backend. Verifique se a API está online.");
+            alert(`Falha no processamento: ${error.message}`);
         } finally {
             btnProcessar.innerHTML = textoOriginalBotao;
             btnProcessar.disabled = false;
         }
     });
 
-    // Renderiza itens dinamicamente na tabela e recalcula os cards do painel
+    // Renderiza itens dinamicamente na tabela
     function renderizarTabelaEMetricas(listaItens) {
+        if (!tbody) return;
         tbody.innerHTML = "";
 
         let convertidos = 0;
@@ -175,58 +184,27 @@ document.addEventListener("DOMContentLoaded", () => {
         atualizarMetricas(listaItens.length, convertidos, pendentes, naoEncontrados);
     }
 
-    // Ação do Botão Exportar (Ativa a Etapa 4)
+    // Botão Exportar
     btnExportar?.addEventListener("click", () => {
-        setStep(4); // Stepper -> Exportar Excel
-        alert("Iniciando o download dos resultados em Excel...");
+        setStep(4);
+        alert("Resultado pronto para exportação!");
     });
 
-    // Limpar seleções e zerar telas
+    // Botão Limpar
     btnLimpar?.addEventListener("click", () => {
-        pdfInput.value = "";
-        excelInput.value = "";
+        if (pdfInput) pdfInput.value = "";
+        if (excelInput) excelInput.value = "";
         
-        pdfName.textContent = "Selecione o PDF...";
-        pdfSize.textContent = "";
-        pdfCheck.style.display = "none";
+        if (pdfName) pdfName.textContent = "Selecione o PDF...";
+        if (pdfSize) pdfSize.textContent = "";
+        if (pdfCheck) pdfCheck.style.display = "none";
 
-        excelName.textContent = "Selecione a planilha...";
-        excelSize.textContent = "";
-        excelCheck.style.display = "none";
+        if (excelName) excelName.textContent = "Selecione a planilha...";
+        if (excelSize) excelSize.textContent = "";
+        if (excelCheck) excelCheck.style.display = "none";
 
-        tbody.innerHTML = "";
+        if (tbody) tbody.innerHTML = "";
         atualizarMetricas(0, 0, 0, 0);
         setStep(1);
     });
 });
-
-// Exemplo do trecho dentro de btnProcessar.addEventListener
-const response = await fetch('/escrever-no-pdf-original/', {
-    method: 'POST',
-    body: formData
-});
-
-if (!response.ok) throw new Error("Erro na resposta do servidor.");
-
-const data = await response.json();
-
-// 1. Atualiza Tabela e Painel de Métricas
-renderizarTabelaEMetricas(data.itens || []);
-
-// 2. Faz o Download do PDF Modificado via Base64
-const byteCharacters = atob(data.pdf_base64);
-const byteNumbers = new Array(byteCharacters.length);
-for (let i = 0; i < byteCharacters.length; i++) {
-    byteNumbers[i] = byteCharacters.charCodeAt(i);
-}
-const byteArray = new Uint8Array(byteNumbers);
-const blob = new Blob([byteArray], { type: 'application/pdf' });
-
-const url = window.URL.createObjectURL(blob);
-const a = document.createElement('a');
-a.href = url;
-a.download = 'Orcamento_SOL.pdf';
-document.body.appendChild(a);
-a.click();
-a.remove();
-window.URL.revokeObjectURL(url);
