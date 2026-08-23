@@ -22,7 +22,7 @@ app.add_middleware(
 def limpar_codigo(codigo) -> str:
     if pd.isna(codigo) or codigo is None:
         return ""
-    # Remove qualquer caractere que não seja número
+    # Remove qualquer caractere que não seja número (ex: "84561324CNH" -> "84561324")
     return re.sub(r'\D', '', str(codigo)).strip()
 
 @app.post("/escrever-no-pdf-original/")
@@ -44,7 +44,7 @@ async def escrever_no_pdf_original(
         col_desc = next((c for c in df_depara.columns if "DESC" in str(c).upper()), None)
 
         if not col_ref or not col_item:
-            raise HTTPException(status_code=400, detail="Colunas 'Referencia' e 'Código Item' não encontradas.")
+            raise HTTPException(status_code=400, detail="Colunas 'Referencia' e 'Código Item' não encontradas no Excel.")
 
         mapa_sol = {}
         mapa_desc = {}
@@ -73,13 +73,6 @@ async def escrever_no_pdf_original(
                 page_width = float(page.mediabox.width)
                 page_height = float(page.mediabox.height)
 
-                # Identifica a posição da tabela de peças para não pegar nada acima dela
-                y_inicio_tabela = 300  # Valor padrão seguro caso não ache o texto do título
-                for w in words:
-                    if "PECAS" in w['text'].upper() or "LUBRIFICANTES" in w['text'].upper():
-                        y_inicio_tabela = w['bottom']
-                        break
-
                 packet = io.BytesIO()
                 can = canvas.Canvas(packet, pagesize=(page_width, page_height))
                 escreveu_algo = False
@@ -88,34 +81,50 @@ async def escrever_no_pdf_original(
                     texto = word['text'].strip()
                     cod_limpo = limpar_codigo(texto)
 
-                    # REGRAS DE FILTRO EXCLUSIVAS PARA A TABELA DE PEÇAS:
-                    # 1. Posição Y deve ser ABAIXO da header do orçamentos/cabeçalho (word['top'] > y_inicio_tabela)
-                    # 2. Posição X na coluna de códigos (x0 < 100)
-                    # 3. O código precisa existir na planilha De/Para
-                    if word['top'] > y_inicio_tabela and word['x0'] < 100 and cod_limpo in mapa_sol:
-                        raw_sol = mapa_sol[cod_limpo]
-                        descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
-                        cod_sol = f"SOL-{raw_sol}" if not raw_sol.startswith("SOL") else raw_sol
+                    # REGRAS DE RECONHECIMENTO PRECISO DE PEÇAS:
+                    # 1. Posição X < 130pt (Coluna de Códigos)
+                    # 2. Texto termina com 'CNH' OU o código limpo está presente na planilha Excel
+                    # 3. Não é uma data (não contém '/')
+                    eh_codigo_peca = (texto.upper().endswith("CNH") or cod_limpo in mapa_sol)
+                    
+                    if word['x0'] < 130 and "/" not in texto and eh_codigo_peca:
+                        
+                        # Verifica se o código tem correspondência no De/Para da planilha
+                        if cod_limpo in mapa_sol:
+                            raw_sol = mapa_sol[cod_limpo]
+                            descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
+                            cod_sol = f"SOL-{raw_sol}" if not raw_sol.startswith("SOL") else raw_sol
 
-                        if cod_limpo not in codigos_processados:
-                            codigos_processados.add(cod_limpo)
-                            itens_encontrados.append({
-                                "status": "Convertido",
-                                "codigo_original": texto,
-                                "codigo_sol": cod_sol,
-                                "descricao": descricao
-                            })
+                            if cod_limpo not in codigos_processados:
+                                codigos_processados.add(cod_limpo)
+                                itens_encontrados.append({
+                                    "status": "Convertido",
+                                    "codigo_original": texto,
+                                    "codigo_sol": cod_sol,
+                                    "descricao": descricao
+                                })
 
-                        # Escreve o código SOL logo à direita do código original
-                        x_fim_codigo = word['x1']
-                        y_top = word['top']
-                        h = word['bottom'] - word['top']
-                        y_baseline = page_height - y_top - (h * 0.75)
+                            # Posição exata no PDF
+                            x_fim_codigo = word['x1']
+                            y_top = word['top']
+                            h = word['bottom'] - word['top']
+                            y_baseline = page_height - y_top - (h * 0.75)
 
-                        can.setFont("Helvetica-Bold", 6)
-                        can.setFillColor(HexColor("#2563eb"))
-                        can.drawString(x_fim_codigo + 4, y_baseline, cod_sol)
-                        escreveu_algo = True
+                            can.setFont("Helvetica-Bold", 6)
+                            can.setFillColor(HexColor("#2563eb"))
+                            can.drawString(x_fim_codigo + 4, y_baseline, cod_sol)
+                            escreveu_algo = True
+
+                        else:
+                            # Peça identificada na coluna de código mas não existente no Excel De/Para
+                            if cod_limpo and cod_limpo not in codigos_processados:
+                                codigos_processados.add(cod_limpo)
+                                itens_encontrados.append({
+                                    "status": "Não encontrado",
+                                    "codigo_original": texto,
+                                    "codigo_sol": "—",
+                                    "descricao": "SEM DESCRIÇÃO"
+                                })
 
                 can.save()
                 packet.seek(0)
