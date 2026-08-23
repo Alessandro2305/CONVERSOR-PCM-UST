@@ -22,6 +22,7 @@ app.add_middleware(
 def limpar_codigo(codigo) -> str:
     if pd.isna(codigo) or codigo is None:
         return ""
+    # Remove qualquer caractere que não seja número
     return re.sub(r'\D', '', str(codigo)).strip()
 
 @app.post("/escrever-no-pdf-original/")
@@ -72,6 +73,13 @@ async def escrever_no_pdf_original(
                 page_width = float(page.mediabox.width)
                 page_height = float(page.mediabox.height)
 
+                # Identifica a posição da tabela de peças para não pegar nada acima dela
+                y_inicio_tabela = 300  # Valor padrão seguro caso não ache o texto do título
+                for w in words:
+                    if "PECAS" in w['text'].upper() or "LUBRIFICANTES" in w['text'].upper():
+                        y_inicio_tabela = w['bottom']
+                        break
+
                 packet = io.BytesIO()
                 can = canvas.Canvas(packet, pagesize=(page_width, page_height))
                 escreveu_algo = False
@@ -80,11 +88,11 @@ async def escrever_no_pdf_original(
                     texto = word['text'].strip()
                     cod_limpo = limpar_codigo(texto)
 
-                    # IGNORA CABEÇALHOS: 
-                    # 1. Ignora datas (que contêm /)
-                    # 2. Exige que x0 < 130pt (coluna de códigos)
-                    # 3. OBRIGATÓRIO: O código numérico precisa existir no mapa da planilha Excel
-                    if "/" not in texto and cod_limpo in mapa_sol and word['x0'] < 130:
+                    # REGRAS DE FILTRO EXCLUSIVAS PARA A TABELA DE PEÇAS:
+                    # 1. Posição Y deve ser ABAIXO da header do orçamentos/cabeçalho (word['top'] > y_inicio_tabela)
+                    # 2. Posição X na coluna de códigos (x0 < 100)
+                    # 3. O código precisa existir na planilha De/Para
+                    if word['top'] > y_inicio_tabela and word['x0'] < 100 and cod_limpo in mapa_sol:
                         raw_sol = mapa_sol[cod_limpo]
                         descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
                         cod_sol = f"SOL-{raw_sol}" if not raw_sol.startswith("SOL") else raw_sol
@@ -98,7 +106,7 @@ async def escrever_no_pdf_original(
                                 "descricao": descricao
                             })
 
-                        # Posição na frente do código original no PDF
+                        # Escreve o código SOL logo à direita do código original
                         x_fim_codigo = word['x1']
                         y_top = word['top']
                         h = word['bottom'] - word['top']
@@ -106,7 +114,7 @@ async def escrever_no_pdf_original(
 
                         can.setFont("Helvetica-Bold", 6)
                         can.setFillColor(HexColor("#2563eb"))
-                        can.drawString(x_fim_codigo + 6, y_baseline, cod_sol)
+                        can.drawString(x_fim_codigo + 4, y_baseline, cod_sol)
                         escreveu_algo = True
 
                 can.save()
