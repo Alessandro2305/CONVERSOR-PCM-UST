@@ -107,14 +107,16 @@ document.addEventListener("DOMContentLoaded", () => {
             });
 
             if (!response.ok) {
-                throw new Error(`Erro no servidor: Status ${response.status}`);
+                // Tenta extrair a mensagem de erro do servidor se houver
+                const errorText = await response.text();
+                throw new Error(errorText || "Erro no processamento do servidor.");
             }
 
-            // 1. Lê a resposta como arquivo binário (Blob) em vez de JSON
+            // Converte a resposta em BLOB explícito do tipo PDF
             const blob = await response.blob();
+            const pdfBlob = new Blob([blob], { type: 'application/pdf' });
 
-            // 2. Cria URL temporária e aciona o download
-            const url = window.URL.createObjectURL(blob);
+            const url = window.URL.createObjectURL(pdfBlob);
             const a = document.createElement('a');
             a.href = url;
             a.download = 'Orcamento_SOL.pdf';
