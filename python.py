@@ -11,7 +11,6 @@ from reportlab.lib.colors import HexColor
 
 app = FastAPI()
 
-# Permite requisições POST vindas do navegador/frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,7 +19,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# A função precisa ser declarada ANTES da rota usar
 def limpar_codigo(codigo) -> str:
     if pd.isna(codigo) or codigo is None:
         return ""
@@ -39,7 +37,6 @@ async def escrever_no_pdf_original(
         except Exception:
             df_depara = pd.read_excel(io.BytesIO(excel_bytes))
 
-        # Identificação dinâmica das colunas
         col_ref = next((c for c in df_depara.columns if "REF" in str(c).upper()), None)
         col_item = next((c for c in df_depara.columns if "ITEM" in str(c).upper() or "CÓDIGO" in str(c).upper() or "CODIGO" in str(c).upper()), None)
         col_desc = next((c for c in df_depara.columns if "DESC" in str(c).upper()), None)
@@ -58,7 +55,7 @@ async def escrever_no_pdf_original(
                 if col_desc and pd.notna(row[col_desc]):
                     mapa_desc[chave] = str(row[col_desc]).strip()
 
-        # 2. Leitura do PDF Original
+        # 2. Leitura do PDF
         pdf_bytes = await pdf_file.read()
         reader = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
@@ -77,41 +74,48 @@ async def escrever_no_pdf_original(
 
                 packet = io.BytesIO()
                 can = canvas.Canvas(packet, pagesize=(page_width, page_height))
-
                 escreveu_algo = False
 
                 for word in words:
                     texto = word['text']
                     cod_limpo = limpar_codigo(texto)
 
-                    if cod_limpo and len(cod_limpo) >= 4:
-                        cod_sol = mapa_sol.get(cod_limpo, "")
+                    # Garante que chaves com zeros à esquerda ou códigos válidos sejam comparados corretamente
+                    if cod_limpo and len(cod_limpo) >= 4 and cod_limpo in mapa_sol:
+                        cod_sol = mapa_sol[cod_limpo]
                         descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
 
                         if cod_limpo not in codigos_processados:
                             codigos_processados.add(cod_limpo)
-                            status = "Convertido" if cod_sol else "Não encontrado"
-                            cod_sol_formatado = f"SOL-{cod_sol}" if cod_sol else "—"
-
                             itens_encontrados.append({
-                                "status": status,
+                                "status": "Convertido",
                                 "codigo_original": texto,
-                                "codigo_sol": cod_sol_formatado,
+                                "codigo_sol": f"SOL-{cod_sol}",
                                 "descricao": descricao
                             })
 
-                        if cod_sol:
-                            x0 = word['x0']
-                            y_top = word['top']
-                            h = word['bottom'] - word['top']
-                            y0 = page_height - y_top - h
+                        # Posicionamento dinâmico baseado na largura do texto original
+                        x1 = word['x1']
+                        y_top = word['top']
+                        h = word['bottom'] - word['top']
+                        y0 = page_height - y_top - h
 
-                            can.setFont("Helvetica-Bold", 7)
-                            can.setFillColor(HexColor("#2563eb"))
-                            
-                            # Escreve a chave SOL ligeiramente deslocada à direita do código original
-                            can.drawString(x0 + 45, y0 + 1, f"SOL-{cod_sol}")
-                            escreveu_algo = True
+                        can.setFont("Helvetica-Bold", 7)
+                        can.setFillColor(HexColor("#2563eb"))
+                        
+                        # Adiciona pequeno espaçamento (+4pt) após a borda direita da palavra original
+                        can.drawString(x1 + 4, y0 + 1, f"SOL-{cod_sol}")
+                        escreveu_algo = True
+
+                    elif cod_limpo and len(cod_limpo) >= 4 and cod_limpo not in codigos_processados:
+                        # Registra itens lidos do PDF que não constam na tabela De/Para
+                        codigos_processados.add(cod_limpo)
+                        itens_encontrados.append({
+                            "status": "Não encontrado",
+                            "codigo_original": texto,
+                            "codigo_sol": "—",
+                            "descricao": "SEM DESCRIÇÃO"
+                        })
 
                 can.save()
                 packet.seek(0)
@@ -123,7 +127,7 @@ async def escrever_no_pdf_original(
 
                 writer.add_page(page)
 
-        # 4. Retorno Base64 do PDF modificado
+        # 4. Retorno do Payload
         output_stream = io.BytesIO()
         writer.write(output_stream)
         output_stream.seek(0)

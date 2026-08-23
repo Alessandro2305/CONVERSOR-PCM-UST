@@ -1,5 +1,4 @@
 fastapi
-uvicorn
 pdfplumber
 pandas
 openpyxl
