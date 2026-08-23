@@ -9,7 +9,7 @@ from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import HexColor
 
-app = FastAPI()
+app = FastAPI(redirect_slashes=False)
 
 app.add_middleware(
     CORSMiddleware,
@@ -25,8 +25,8 @@ def limpar_codigo(codigo) -> str:
         return ""
     return re.sub(r'\D', '', str(codigo)).strip()
 
-
 @app.post("/escrever-no-pdf-original")
+@app.post("/escrever-no-pdf-original/")
 async def escrever_no_pdf_original(
     pdf_file: UploadFile = File(...),
     excel_depara: UploadFile = File(...)
