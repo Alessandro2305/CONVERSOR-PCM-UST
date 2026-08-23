@@ -208,3 +208,8 @@ document.addEventListener("DOMContentLoaded", () => {
         setStep(1);
     });
 });
+
+const response = await fetch('/escrever-no-pdf-original', {
+    method: 'POST',
+    body: formData
+});
