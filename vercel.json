@@ -1,23 +1,8 @@
 {
-  "builds": [
+  "rewrites": [
     {
-      "src": "api/index.py",
-      "use": "@vercel/python"
-    },
-    {
-      "src": "interface.html",
-      "use": "@vercel/static"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/escrever-no-pdf-original",
-      "methods": ["POST", "OPTIONS"],
-      "dest": "api/index.py"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/interface.html"
+      "source": "/escrever-no-pdf-original",
+      "destination": "/api/index.py"
     }
   ]
 }
