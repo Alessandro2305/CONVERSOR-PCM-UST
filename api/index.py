@@ -27,6 +27,7 @@ def limpar_codigo(codigo) -> str:
 
 @app.post("/escrever-no-pdf-original")
 @app.post("/escrever-no-pdf-original/")
+@app.post("/api/escrever-no-pdf-original")
 async def escrever_no_pdf_original(
     pdf_file: UploadFile = File(...),
     excel_depara: UploadFile = File(...)
@@ -81,7 +82,9 @@ async def escrever_no_pdf_original(
                     texto = word['text']
                     cod_limpo = limpar_codigo(texto)
 
-                    if cod_limpo and len(cod_limpo) >= 4 and word['x0'] < 130:
+                    # Filtra apenas palavras que contêm códigos numéricos de no mínimo 4 dígitos
+                    # e limita o x0 para pegar apenas os códigos da primeira coluna (evita falsos positivos na folha)
+                    if cod_limpo and len(cod_limpo) >= 4 and word['x0'] < 150:
                         if cod_limpo in mapa_sol:
                             cod_sol = mapa_sol[cod_limpo]
                             descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
@@ -95,14 +98,17 @@ async def escrever_no_pdf_original(
                                     "descricao": descricao
                                 })
 
-                            x0 = word['x0']
+                            # Coordenadas do código original capturado
                             y_top = word['top']
                             h = word['bottom'] - word['top']
-                            y0 = page_height - y_top - h
+                            
+                            # Ajuste da coordenada Y do ReportLab (calculada de baixo para cima)
+                            y_baseline = page_height - y_top - (h * 0.8)
 
-                            can.setFont("Helvetica-Bold", 6.5)
+                            # Posição fixa X para a coluna 'CODIGO SOL' (aproximadamente 115pt a 125pt do canto esquerdo)
+                            can.setFont("Helvetica-Bold", 7.5)
                             can.setFillColor(HexColor("#2563eb"))
-                            can.drawString(x0 + 52, y0 + 1, f"SOL-{cod_sol}")
+                            can.drawString(120, y_baseline, f"SOL-{cod_sol}")
                             escreveu_algo = True
 
                         elif cod_limpo not in codigos_processados:
@@ -117,13 +123,12 @@ async def escrever_no_pdf_original(
                 can.save()
                 packet.seek(0)
 
-                # Preserva a página original e mescla a camada de texto por cima
-                page_to_add = original_page
+                # Clona a página para evitar perda de referências e aplica o merge
                 if escreveu_algo:
                     overlay_pdf = PdfReader(packet)
-                    page_to_add.merge_page(overlay_pdf.pages[0])
+                    original_page.merge_page(overlay_pdf.pages[0])
 
-                writer.add_page(page_to_add)
+                writer.add_page(original_page)
 
         output_stream = io.BytesIO()
         writer.write(output_stream)
