@@ -101,7 +101,8 @@ document.addEventListener("DOMContentLoaded", () => {
         btnProcessar.disabled = true;
 
         try {
-            const response = await fetch('/escrever-no-pdf-original', {
+            // Rota atualizada com a barra no final "/escrever-no-pdf-original/" para bater com a API FastAPI
+            const response = await fetch('/escrever-no-pdf-original/', {
                 method: 'POST',
                 body: formData
             });
