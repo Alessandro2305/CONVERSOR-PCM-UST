@@ -1,10 +1,10 @@
 import io
 import re
-import base64
 import pandas as pd
 import pdfplumber
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import HexColor
@@ -24,9 +24,8 @@ def limpar_codigo(codigo) -> str:
         return ""
     return re.sub(r'\D', '', str(codigo)).strip()
 
-from fastapi.responses import Response
-
 @app.post("/escrever-no-pdf-original/")
+@app.post("/escrever-no-pdf-original")
 async def escrever_no_pdf_original(
     pdf_file: UploadFile = File(...),
     excel_depara: UploadFile = File(...)
@@ -72,18 +71,22 @@ async def escrever_no_pdf_original(
                     texto = word['text']
                     cod_limpo = limpar_codigo(texto)
 
+                    # Filtra os códigos da coluna CÓDIGO (x0 < 130pt)
                     if cod_limpo in mapa_sol and len(cod_limpo) >= 4 and word['x0'] < 130:
                         raw_sol = str(mapa_sol[cod_limpo]).replace(".0", "").replace(".", "").strip()
                         cod_sol = f"SOL-{raw_sol}" if not raw_sol.startswith("SOL") else raw_sol
 
-                        x0 = word['x0']
+                        # Pega onde TERMINA o código original (x1)
+                        x_fim_codigo = word['x1']
                         y_top = word['top']
                         h = word['bottom'] - word['top']
                         y_baseline = page_height - y_top - (h * 0.75)
 
-                        can.setFont("Helvetica-Bold", 5.5)
+                        can.setFont("Helvetica-Bold", 6)
                         can.setFillColor(HexColor("#2563eb"))
-                        can.drawString(x0 - 45, y_baseline, cod_sol)
+                        
+                        # Escreve à direita do código original
+                        can.drawString(x_fim_codigo + 6, y_baseline, cod_sol)
                         escreveu_algo = True
 
                 can.save()
@@ -100,7 +103,6 @@ async def escrever_no_pdf_original(
         writer.write(output_stream)
         output_stream.seek(0)
 
-        # Retorna o arquivo binário do PDF diretamente
         return Response(
             content=output_stream.getvalue(),
             media_type="application/pdf",
