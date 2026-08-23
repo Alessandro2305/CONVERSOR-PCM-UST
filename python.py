@@ -11,50 +11,40 @@ from reportlab.lib.colors import HexColor
 app = FastAPI()
 
 def limpar_codigo(codigo: str) -> str:
-    """Extrai apenas a sequência numérica de um texto."""
     if not codigo:
         return ""
     return re.sub(r'\D', '', str(codigo)).strip()
 
-@app.post("/escrever-no-pdf-original/")
+@app.post("/escrever-no-pdf-original")
 async def escrever_no_pdf_original(
     pdf_file: UploadFile = File(...),
     excel_depara: UploadFile = File(...)
 ):
-    """Lê o PDF original, injeta o Código SOL e retorna o PDF em Base64 + dados para a tabela/painel."""
     try:
-        # 1. Carrega os dados De/Para do Excel
         excel_bytes = await excel_depara.read()
         try:
             df_depara = pd.read_excel(io.BytesIO(excel_bytes), engine='openpyxl')
         except Exception:
             df_depara = pd.read_excel(io.BytesIO(excel_bytes))
 
-        # Mapeia colunas por padrão de nome
         col_ref = next((c for c in df_depara.columns if "REF" in str(c).upper()), None)
         col_item = next((c for c in df_depara.columns if "ITEM" in str(c).upper() or "CÓDIGO" in str(c).upper() or "CODIGO" in str(c).upper()), None)
         col_desc = next((c for c in df_depara.columns if "DESC" in str(c).upper()), None)
 
         if not col_ref or not col_item:
-            raise HTTPException(
-                status_code=400, 
-                detail="Colunas 'Referencia' e 'Código Item' não encontradas no Excel."
-            )
+            raise HTTPException(status_code=400, detail="Colunas não encontradas no Excel.")
 
         mapa_sol = {}
         mapa_desc = {}
-        
         for _, row in df_depara.iterrows():
             chave = limpar_codigo(row[col_ref])
             if chave:
                 val_sol = str(row[col_item]).strip()
                 if val_sol and val_sol.lower() != "nan":
                     mapa_sol[chave] = val_sol.replace(".0", "").replace(".", "").strip()
-                
                 if col_desc and pd.notna(row[col_desc]):
                     mapa_desc[chave] = str(row[col_desc]).strip()
 
-        # 2. Leitura e Injeção no PDF
         pdf_bytes = await pdf_file.read()
         reader = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
@@ -77,14 +67,12 @@ async def escrever_no_pdf_original(
                     texto = word['text']
                     cod_limpo = limpar_codigo(texto)
 
-                    # Filtra apenas códigos numéricos válidos posicionados na margem da esquerda
                     if cod_limpo and len(cod_limpo) >= 4 and word['x0'] < 130:
                         cod_sol = mapa_sol.get(cod_limpo, "")
                         descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
 
                         if cod_limpo not in codigos_processados:
                             codigos_processados.add(cod_limpo)
-                            
                             status = "Convertido" if cod_sol else "Não encontrado"
                             cod_sol_formatado = f"SOL-{cod_sol}" if cod_sol else "—"
 
@@ -95,7 +83,7 @@ async def escrever_no_pdf_original(
                                 "descricao": descricao
                             })
 
-                        # Escreve o novo Código SOL no PDF sobre o overlay
+                        # Escreve o texto com offset no PDF
                         if cod_sol:
                             x0 = word['x0']
                             y_top = word['top']
@@ -126,8 +114,5 @@ async def escrever_no_pdf_original(
             "itens": itens_encontrados
         }
 
-    except HTTPException as http_err:
-        raise http_err
     except Exception as e:
-        print(f"Erro ao modificar PDF: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Erro interno no processamento: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

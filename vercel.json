@@ -1,19 +1,11 @@
 {
   "rewrites": [
     {
-      "source": "/escrever-no-pdf-original/(.*)",
-      "destination": "/api/index.py"
-    },
-    {
       "source": "/escrever-no-pdf-original",
       "destination": "/api/index.py"
     },
     {
-      "source": "/converter-pdf/(.*)",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/converter-pdf",
+      "source": "/escrever-no-pdf-original/",
       "destination": "/api/index.py"
     },
     {

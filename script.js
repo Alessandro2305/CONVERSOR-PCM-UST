@@ -208,3 +208,33 @@ document.addEventListener("DOMContentLoaded", () => {
         setStep(1);
     });
 });
+
+const response = await fetch('/escrever-no-pdf-original', {
+    method: 'POST',
+    body: formData
+});
+
+const data = await response.json();
+
+// Preenche a tabela na interface
+renderizarTabelaEMetricas(data.itens || []);
+
+// Realiza o download do PDF modificado no navegador
+if (data.pdf_base64) {
+    const byteCharacters = atob(data.pdf_base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: 'application/pdf' });
+
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'Orcamento_SOL.pdf';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+}
