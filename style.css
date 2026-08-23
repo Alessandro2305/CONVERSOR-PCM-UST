@@ -458,3 +458,19 @@ td {
     font-weight: 500;
     margin-top: 10px;
 }
+
+/* Contêiner da Tabela de Resultados */
+.table-responsive, 
+.card-tabela {
+    max-height: 450px; /* Ou a altura desejada */
+    overflow-y: auto;  /* Habilita a barra de rolagem vertical */
+    overflow-x: auto;  /* Mantém a rolagem horizontal caso a tela diminua */
+}
+
+/* Fixar o cabeçalho da tabela no topo enquanto rola (Opcional, mas melhora a navegação) */
+.table-responsive table thead th {
+    position: sticky;
+    top: 0;
+    background-color: #002b66; /* Mesma cor do seu cabeçalho azul */
+    z-index: 2;
+}
