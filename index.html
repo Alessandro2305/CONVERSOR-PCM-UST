@@ -209,25 +209,29 @@
             </button>
         </div>
 
-        <!-- Tabela de Exibição dos Dados -->
+       <!-- Tabela de Exibição dos Dados -->
         <div class="table-container">
             <div class="table-header">
                 <strong>Resultados do Processamento</strong>
                 <span id="contadorItens">0 itens identificados</span>
             </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>STATUS</th>
-                        <th>CÓDIGO ORIGINAL</th>
-                        <th>CÓDIGO SOL (CONVERTIDO)</th>
-                        <th>DESCRIÇÃO DO ITEM</th>
-                    </tr>
-                </thead>
-                <tbody id="tabelaDados">
-                    <!-- Preenchido dinamicamente pelo JavaScript -->
-                </tbody>
-            </table>
+            
+            <!-- Div com scroll mantendo o cabeçalho fixo -->
+            <div class="tabela-scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>STATUS</th>
+                            <th>CÓDIGO ORIGINAL</th>
+                            <th>CÓDIGO SOL (CONVERTIDO)</th>
+                            <th>DESCRIÇÃO DO ITEM</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabelaDados">
+                        <!-- Preenchido dinamicamente pelo JavaScript -->
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         
