@@ -82,9 +82,8 @@ async def escrever_no_pdf_original(
                     texto = word['text']
                     cod_limpo = limpar_codigo(texto)
 
-                    # Filtra apenas palavras que contêm códigos numéricos de no mínimo 4 dígitos
-                    # e limita o x0 para pegar apenas os códigos da primeira coluna (evita falsos positivos na folha)
-                    if cod_limpo and len(cod_limpo) >= 4 and word['x0'] < 150:
+                    # Filtra apenas códigos na primeira coluna (x0 < 100pt)
+                    if cod_limpo and len(cod_limpo) >= 4 and word['x0'] < 100:
                         if cod_limpo in mapa_sol:
                             cod_sol = mapa_sol[cod_limpo]
                             descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
@@ -98,17 +97,23 @@ async def escrever_no_pdf_original(
                                     "descricao": descricao
                                 })
 
-                            # Coordenadas do código original capturado
+                            # Coordenadas exatas da palavra capturada
+                            x0 = word['x0']
                             y_top = word['top']
+                            w = word['x1'] - word['x0']
                             h = word['bottom'] - word['top']
                             
-                            # Ajuste da coordenada Y do ReportLab (calculada de baixo para cima)
-                            y_baseline = page_height - y_top - (h * 0.8)
+                            # Transforma a coordenada Y para o padrão ReportLab
+                            y0 = page_height - y_top - h
 
-                            # Posição fixa X para a coluna 'CODIGO SOL' (aproximadamente 115pt a 125pt do canto esquerdo)
-                            can.setFont("Helvetica-Bold", 7.5)
+                            # 1. Apaga o código original desenhando um retângulo branco por cima
+                            can.setFillColorRGB(1, 1, 1)
+                            can.rect(x0 - 1, y0 - 1, w + 6, h + 2, fill=True, stroke=False)
+
+                            # 2. Escreve o código SOL em azul exatamente no mesmo espaço
+                            can.setFont("Helvetica-Bold", 7)
                             can.setFillColor(HexColor("#2563eb"))
-                            can.drawString(120, y_baseline, f"SOL-{cod_sol}")
+                            can.drawString(x0, y0 + 1, f"SOL-{cod_sol}")
                             escreveu_algo = True
 
                         elif cod_limpo not in codigos_processados:
@@ -123,7 +128,7 @@ async def escrever_no_pdf_original(
                 can.save()
                 packet.seek(0)
 
-                # Clona a página para evitar perda de referências e aplica o merge
+                # Mescla as edições com a página original
                 if escreveu_algo:
                     overlay_pdf = PdfReader(packet)
                     original_page.merge_page(overlay_pdf.pages[0])
