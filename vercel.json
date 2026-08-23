@@ -5,10 +5,6 @@
       "destination": "/api/index.py"
     },
     {
-      "source": "/escrever-no-pdf-original/",
-      "destination": "/api/index.py"
-    },
-    {
       "source": "/(.*)",
       "destination": "/interface.html"
     }

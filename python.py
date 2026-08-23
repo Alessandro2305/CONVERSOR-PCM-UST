@@ -4,16 +4,26 @@ import base64
 import pandas as pd
 import pdfplumber
 from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import HexColor
 
 app = FastAPI()
 
-def limpar_codigo(codigo: str) -> str:
-    if not codigo:
+# Permite requisições POST vindas do navegador/frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# A função precisa ser declarada ANTES da rota usar
+def limpar_codigo(codigo) -> str:
+    if pd.isna(codigo) or codigo is None:
         return ""
-    # Extrai apenas os números do texto
     return re.sub(r'\D', '', str(codigo)).strip()
 
 @app.post("/escrever-no-pdf-original")
@@ -29,7 +39,7 @@ async def escrever_no_pdf_original(
         except Exception:
             df_depara = pd.read_excel(io.BytesIO(excel_bytes))
 
-        # Identificação dinâmica de colunas
+        # Identificação dinâmica das colunas
         col_ref = next((c for c in df_depara.columns if "REF" in str(c).upper()), None)
         col_item = next((c for c in df_depara.columns if "ITEM" in str(c).upper() or "CÓDIGO" in str(c).upper() or "CODIGO" in str(c).upper()), None)
         col_desc = next((c for c in df_depara.columns if "DESC" in str(c).upper()), None)
@@ -56,7 +66,7 @@ async def escrever_no_pdf_original(
         itens_encontrados = []
         codigos_processados = set()
 
-        # 3. Processamento de Páginas com pdfplumber + reportlab
+        # 3. Processamento de Páginas
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf_plumber:
             for page_idx, page in enumerate(reader.pages):
                 plumber_page = pdf_plumber.pages[page_idx]
@@ -74,7 +84,6 @@ async def escrever_no_pdf_original(
                     texto = word['text']
                     cod_limpo = limpar_codigo(texto)
 
-                    # Filtro de tamanho mínimo para evitar pegar caracteres soltos
                     if cod_limpo and len(cod_limpo) >= 4:
                         cod_sol = mapa_sol.get(cod_limpo, "")
                         descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
@@ -91,7 +100,6 @@ async def escrever_no_pdf_original(
                                 "descricao": descricao
                             })
 
-                        # Escreve no PDF se o código existir na tabela De/Para
                         if cod_sol:
                             x0 = word['x0']
                             y_top = word['top']
@@ -101,14 +109,13 @@ async def escrever_no_pdf_original(
                             can.setFont("Helvetica-Bold", 7)
                             can.setFillColor(HexColor("#2563eb"))
                             
-                            # Ajuste o desvio (offset): x0 + 45 desenha o código logo ao lado do texto
+                            # Escreve a chave SOL ligeiramente deslocada à direita do código original
                             can.drawString(x0 + 45, y0 + 1, f"SOL-{cod_sol}")
                             escreveu_algo = True
 
                 can.save()
                 packet.seek(0)
 
-                # Aplica a camada de texto sobre a página original
                 if escreveu_algo:
                     overlay_pdf = PdfReader(packet)
                     if len(overlay_pdf.pages) > 0:
@@ -116,7 +123,7 @@ async def escrever_no_pdf_original(
 
                 writer.add_page(page)
 
-        # 4. Retorno Base64 para Download no Frontend
+        # 4. Retorno Base64 do PDF modificado
         output_stream = io.BytesIO()
         writer.write(output_stream)
         output_stream.seek(0)
