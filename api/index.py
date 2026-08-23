@@ -77,42 +77,37 @@ async def escrever_no_pdf_original(
                 escreveu_algo = False
 
                 for word in words:
-                    texto = word['text']
+                    texto = word['text'].strip()
                     cod_limpo = limpar_codigo(texto)
 
-                    if cod_limpo and len(cod_limpo) >= 4 and word['x0'] < 130:
-                        if cod_limpo in mapa_sol:
-                            raw_sol = mapa_sol[cod_limpo]
-                            descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
-                            cod_sol = f"SOL-{raw_sol}" if not raw_sol.startswith("SOL") else raw_sol
+                    # IGNORA CABEÇALHOS: 
+                    # 1. Ignora datas (que contêm /)
+                    # 2. Exige que x0 < 130pt (coluna de códigos)
+                    # 3. OBRIGATÓRIO: O código numérico precisa existir no mapa da planilha Excel
+                    if "/" not in texto and cod_limpo in mapa_sol and word['x0'] < 130:
+                        raw_sol = mapa_sol[cod_limpo]
+                        descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
+                        cod_sol = f"SOL-{raw_sol}" if not raw_sol.startswith("SOL") else raw_sol
 
-                            if cod_limpo not in codigos_processados:
-                                codigos_processados.add(cod_limpo)
-                                itens_encontrados.append({
-                                    "status": "Convertido",
-                                    "codigo_original": texto,
-                                    "codigo_sol": cod_sol,
-                                    "descricao": descricao
-                                })
-
-                            x_fim_codigo = word['x1']
-                            y_top = word['top']
-                            h = word['bottom'] - word['top']
-                            y_baseline = page_height - y_top - (h * 0.75)
-
-                            can.setFont("Helvetica-Bold", 6)
-                            can.setFillColor(HexColor("#2563eb"))
-                            can.drawString(x_fim_codigo + 6, y_baseline, cod_sol)
-                            escreveu_algo = True
-
-                        elif cod_limpo not in codigos_processados:
+                        if cod_limpo not in codigos_processados:
                             codigos_processados.add(cod_limpo)
                             itens_encontrados.append({
-                                "status": "Não encontrado",
+                                "status": "Convertido",
                                 "codigo_original": texto,
-                                "codigo_sol": "—",
-                                "descricao": "SEM DESCRIÇÃO"
+                                "codigo_sol": cod_sol,
+                                "descricao": descricao
                             })
+
+                        # Posição na frente do código original no PDF
+                        x_fim_codigo = word['x1']
+                        y_top = word['top']
+                        h = word['bottom'] - word['top']
+                        y_baseline = page_height - y_top - (h * 0.75)
+
+                        can.setFont("Helvetica-Bold", 6)
+                        can.setFillColor(HexColor("#2563eb"))
+                        can.drawString(x_fim_codigo + 6, y_baseline, cod_sol)
+                        escreveu_algo = True
 
                 can.save()
                 packet.seek(0)
