@@ -34,7 +34,7 @@ async def escrever_no_pdf_original(
         # 1. Leitura do Excel
         try:
             excel_bytes = await excel_depara.read()
-            wb = openpyxl.load_workbook(filename=io.BytesIO(excel_bytes), data_only=True)
+            wb = openpyxl.load_workbook(filename=io.BytesIO(excel_bytes), data_only=True, read_only=True)
             sheet = wb.active
         except Exception as e:
             raise HTTPException(
@@ -43,7 +43,10 @@ async def escrever_no_pdf_original(
             )
 
         # 2. Mapeamento das Colunas
-        header = [str(cell.value or '').upper().strip() for cell in sheet[1]]
+        header = []
+        for row in sheet.iter_rows(max_row=1, values_only=True):
+            header = [str(cell or '').upper().strip() for cell in row]
+            break
         
         idx_ref = next((i for i, h in enumerate(header) if "REF" in h), None)
         idx_item = next((i for i, h in enumerate(header) if any(k in h for k in ["ITEM", "CÓDIGO", "CODIGO"])), None)
@@ -91,12 +94,10 @@ async def escrever_no_pdf_original(
                 page_width = float(page.mediabox.width)
                 page_height = float(page.mediabox.height)
 
-                packet = io.BytesIO()
-                can = canvas.Canvas(packet, pagesize=(page_width, page_height))
-                escreveu_algo = False
+                # Coleta as anotações necessárias primeiro
+                anotacoes_pagina = []
 
                 def visitor_body(text, cm, tm, font_dict, font_size):
-                    nonlocal escreveu_algo
                     if not text:
                         return
 
@@ -123,10 +124,7 @@ async def escrever_no_pdf_original(
                                     "descricao": descricao
                                 })
 
-                            can.setFont("Helvetica-Bold", 6)
-                            can.setFillColor(colors.HexColor("#2563eb"))
-                            can.drawString(x_pos + 60, y_pos, cod_sol)
-                            escreveu_algo = True
+                            anotacoes_pagina.append((x_pos + 60, y_pos, cod_sol))
                         else:
                             if cod_limpo and cod_limpo not in codigos_processados:
                                 codigos_processados.add(cod_limpo)
@@ -137,9 +135,19 @@ async def escrever_no_pdf_original(
                                     "descricao": "SEM DESCRIÇÃO"
                                 })
 
+                # Varre a página para extrair as posições
                 page.extract_text(visitor_text=visitor_body)
 
-                if escreveu_algo:
+                # Desenha no Canvas apenas se houver textos a inserir
+                if anotacoes_pagina:
+                    packet = io.BytesIO()
+                    can = canvas.Canvas(packet, pagesize=(page_width, page_height))
+                    can.setFont("Helvetica-Bold", 6)
+                    can.setFillColor(colors.HexColor("#2563eb"))
+
+                    for x, y, texto in anotacoes_pagina:
+                        can.drawString(x, y, texto)
+
                     can.save()
                     packet.seek(0)
                     overlay_pdf = PdfReader(packet)
@@ -149,7 +157,7 @@ async def escrever_no_pdf_original(
                 writer.add_page(page)
 
             except Exception as page_err:
-                # Se falhar na extração rápida com visitor, insere a página sem modificação
+                print(f"Erro ao processar página: {str(page_err)}")
                 writer.add_page(page)
 
         output_stream = io.BytesIO()
@@ -166,7 +174,6 @@ async def escrever_no_pdf_original(
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        # Exibe o traceback completo no console da Vercel e envia na resposta HTTP
         tb = traceback.format_exc()
         print(f"CRITICAL ERROR: {tb}")
         raise HTTPException(status_code=500, detail=f"Erro interno no servidor: {str(e)}")
