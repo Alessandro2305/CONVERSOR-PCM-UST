@@ -1,7 +1,7 @@
 fastapi
-pdfplumber
+python-multipart
 pandas
 openpyxl
+pdfplumber
 pypdf
 reportlab
-python-multipart
