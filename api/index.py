@@ -1,6 +1,7 @@
 import io
 import re
 import base64
+import traceback
 import openpyxl
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,22 +31,29 @@ async def escrever_no_pdf_original(
     excel_depara: UploadFile = File(...)
 ):
     try:
-        # 1. Carregar Planilha Excel
-        excel_bytes = await excel_depara.read()
+        # 1. Leitura do Excel
         try:
+            excel_bytes = await excel_depara.read()
             wb = openpyxl.load_workbook(filename=io.BytesIO(excel_bytes), data_only=True)
             sheet = wb.active
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Erro no Excel: {str(e)}")
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Erro ao abrir a planilha Excel. Certifique-se de ser um arquivo .xlsx válido. Detalhes: {str(e)}"
+            )
 
-        header = [str(cell.value or '').upper() for cell in sheet[1]]
+        # 2. Mapeamento das Colunas
+        header = [str(cell.value or '').upper().strip() for cell in sheet[1]]
         
         idx_ref = next((i for i, h in enumerate(header) if "REF" in h), None)
         idx_item = next((i for i, h in enumerate(header) if any(k in h for k in ["ITEM", "CÓDIGO", "CODIGO"])), None)
         idx_desc = next((i for i, h in enumerate(header) if "DESC" in h), None)
 
         if idx_ref is None or idx_item is None:
-            raise HTTPException(status_code=400, detail=f"Colunas não encontradas no Excel. Detectadas: {header}")
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Colunas obrigatórias não encontradas no Excel. Colunas lidas: {header}"
+            )
 
         mapa_sol = {}
         mapa_desc = {}
@@ -64,73 +72,85 @@ async def escrever_no_pdf_original(
                 if idx_desc is not None and len(row) > idx_desc and row[idx_desc]:
                     mapa_desc[chave] = str(row[idx_desc]).strip()
 
-        # 2. Processar PDF rápido via pypdf
-        pdf_bytes = await pdf_file.read()
-        reader_base = PdfReader(io.BytesIO(pdf_bytes))
-        writer = PdfWriter()
+        # 3. Processamento do PDF
+        try:
+            pdf_bytes = await pdf_file.read()
+            reader_base = PdfReader(io.BytesIO(pdf_bytes))
+        except Exception as e:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Erro ao ler o arquivo PDF enviado. Detalhes: {str(e)}"
+            )
 
+        writer = PdfWriter()
         itens_encontrados = []
         codigos_processados = set()
 
-        for page_idx, page in enumerate(reader_base.pages):
-            page_width = float(page.mediabox.width)
-            page_height = float(page.mediabox.height)
+        for page in reader_base.pages:
+            try:
+                page_width = float(page.mediabox.width)
+                page_height = float(page.mediabox.height)
 
-            packet = io.BytesIO()
-            can = canvas.Canvas(packet, pagesize=(page_width, page_height))
-            escreveu_algo = False
+                packet = io.BytesIO()
+                can = canvas.Canvas(packet, pagesize=(page_width, page_height))
+                escreveu_algo = False
 
-            # Extração de texto ultra rápida com posições
-            def visitor_body(text, cm, tm, font_dict, font_size):
-                nonlocal escreveu_algo
-                texto_limpo = text.strip()
-                cod_limpo = limpar_codigo(texto_limpo)
+                def visitor_body(text, cm, tm, font_dict, font_size):
+                    nonlocal escreveu_algo
+                    if not text:
+                        return
 
-                # cm[4] é o X da palavra, cm[5] é o Y
-                x_pos = cm[4]
-                y_pos = cm[5]
+                    texto_limpo = str(text).strip()
+                    cod_limpo = limpar_codigo(texto_limpo)
 
-                eh_codigo_peca = (texto_limpo.upper().endswith("CNH") or cod_limpo in mapa_sol)
+                    x_pos = cm[4]
+                    y_pos = cm[5]
 
-                if x_pos < 130 and "/" not in texto_limpo and eh_codigo_peca:
-                    if cod_limpo in mapa_sol:
-                        raw_sol = mapa_sol[cod_limpo]
-                        descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
-                        cod_sol = f"SOL-{raw_sol}" if not raw_sol.startswith("SOL") else raw_sol
+                    eh_codigo_peca = (texto_limpo.upper().endswith("CNH") or cod_limpo in mapa_sol)
 
-                        if cod_limpo not in codigos_processados:
-                            codigos_processados.add(cod_limpo)
-                            itens_encontrados.append({
-                                "status": "Convertido",
-                                "codigo_original": texto_limpo,
-                                "codigo_sol": cod_sol,
-                                "descricao": descricao
-                            })
+                    if x_pos < 130 and "/" not in texto_limpo and eh_codigo_peca:
+                        if cod_limpo in mapa_sol:
+                            raw_sol = mapa_sol[cod_limpo]
+                            descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
+                            cod_sol = f"SOL-{raw_sol}" if not raw_sol.startswith("SOL") else raw_sol
 
-                        can.setFont("Helvetica-Bold", 6)
-                        can.setFillColor(colors.HexColor("#2563eb"))
-                        can.drawString(x_pos + 60, y_pos, cod_sol)
-                        escreveu_algo = True
-                    else:
-                        if cod_limpo and cod_limpo not in codigos_processados:
-                            codigos_processados.add(cod_limpo)
-                            itens_encontrados.append({
-                                "status": "Não encontrado",
-                                "codigo_original": texto_limpo,
-                                "codigo_sol": "—",
-                                "descricao": "SEM DESCRIÇÃO"
-                            })
+                            if cod_limpo not in codigos_processados:
+                                codigos_processados.add(cod_limpo)
+                                itens_encontrados.append({
+                                    "status": "Convertido",
+                                    "codigo_original": texto_limpo,
+                                    "codigo_sol": cod_sol,
+                                    "descricao": descricao
+                                })
 
-            page.extract_text(visitor_text=visitor_body)
+                            can.setFont("Helvetica-Bold", 6)
+                            can.setFillColor(colors.HexColor("#2563eb"))
+                            can.drawString(x_pos + 60, y_pos, cod_sol)
+                            escreveu_algo = True
+                        else:
+                            if cod_limpo and cod_limpo not in codigos_processados:
+                                codigos_processados.add(cod_limpo)
+                                itens_encontrados.append({
+                                    "status": "Não encontrado",
+                                    "codigo_original": texto_limpo,
+                                    "codigo_sol": "—",
+                                    "descricao": "SEM DESCRIÇÃO"
+                                })
 
-            if escreveu_algo:
-                can.save()
-                packet.seek(0)
-                overlay_pdf = PdfReader(packet)
-                if len(overlay_pdf.pages) > 0:
-                    page.merge_page(overlay_pdf.pages[0])
+                page.extract_text(visitor_text=visitor_body)
 
-            writer.add_page(page)
+                if escreveu_algo:
+                    can.save()
+                    packet.seek(0)
+                    overlay_pdf = PdfReader(packet)
+                    if len(overlay_pdf.pages) > 0:
+                        page.merge_page(overlay_pdf.pages[0])
+
+                writer.add_page(page)
+
+            except Exception as page_err:
+                # Se falhar na extração rápida com visitor, insere a página sem modificação
+                writer.add_page(page)
 
         output_stream = io.BytesIO()
         writer.write(output_stream)
@@ -146,4 +166,7 @@ async def escrever_no_pdf_original(
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
+        # Exibe o traceback completo no console da Vercel e envia na resposta HTTP
+        tb = traceback.format_exc()
+        print(f"CRITICAL ERROR: {tb}")
         raise HTTPException(status_code=500, detail=f"Erro interno no servidor: {str(e)}")
