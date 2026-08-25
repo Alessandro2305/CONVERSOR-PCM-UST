@@ -24,7 +24,8 @@ def limpar_codigo(val):
     if pd.isna(val) or val is None:
         return ""
     val_str = str(val).strip()
-    return re.sub(r'[^A-Za-z0-9]', '', val_str).upper()
+    # Remove TUDO que não for número (descarta CNH, letras e pontuações)
+    return re.sub(r'[^0-9]', '', val_str)
 
 @app.post("/api/escrever-no-pdf-original")
 @app.post("/escrever-no-pdf-original")
@@ -81,10 +82,12 @@ async def escrever_no_pdf_original(
                 for word in words:
                     texto = word['text'].strip()
                     cod_limpo = limpar_codigo(texto)
-                    eh_codigo_peca = (texto.upper().endswith("CNH") or cod_limpo in mapa_sol)
 
-                    # Filtro de coluna e padrão de código
-                    if word['x0'] < 130 and "/" not in texto and eh_codigo_peca:
+                    # Valida se sobraram números suficientes (mínimo 4 dígitos)
+                    eh_codigo_valido = len(cod_limpo) >= 4
+
+                    # Filtro de coluna no PDF
+                    if word['x0'] < 130 and "/" not in texto and eh_codigo_valido:
                         if cod_limpo in mapa_sol:
                             raw_sol = mapa_sol[cod_limpo]
                             descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
@@ -99,7 +102,7 @@ async def escrever_no_pdf_original(
                                     "descricao": descricao
                                 })
 
-                            # Calcula posição (X, Y) exata no PDF
+                            # Calcula posição exata para desenhar o texto azul
                             x_fim_codigo = word['x1']
                             y_top = word['top']
                             h = word['bottom'] - word['top']
