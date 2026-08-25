@@ -31,10 +31,11 @@ async def escrever_no_pdf_original(
     excel_depara: UploadFile = File(...)
 ):
     try:
-        # 1. Leitura do Excel
+        # 1. Leitura Segura do Excel
         try:
             excel_bytes = await excel_depara.read()
-            wb = openpyxl.load_workbook(filename=io.BytesIO(excel_bytes), data_only=True, read_only=True)
+            # Usando carregamento em memória padrão para evitar travamento de ponteiro read_only
+            wb = openpyxl.load_workbook(filename=io.BytesIO(excel_bytes), data_only=True)
             sheet = wb.active
         except Exception as e:
             raise HTTPException(
@@ -43,10 +44,13 @@ async def escrever_no_pdf_original(
             )
 
         # 2. Mapeamento das Colunas
-        header = []
-        for row in sheet.iter_rows(max_row=1, values_only=True):
-            header = [str(cell or '').upper().strip() for cell in row]
-            break
+        rows = list(sheet.iter_rows(values_only=True))
+        wb.close()  # Libera a memória imediatamente após extrair as linhas
+
+        if not rows:
+            raise HTTPException(status_code=400, detail="A planilha enviada está vazia.")
+
+        header = [str(cell or '').upper().strip() for cell in rows[0]]
         
         idx_ref = next((i for i, h in enumerate(header) if "REF" in h), None)
         idx_item = next((i for i, h in enumerate(header) if any(k in h for k in ["ITEM", "CÓDIGO", "CODIGO"])), None)
@@ -61,7 +65,7 @@ async def escrever_no_pdf_original(
         mapa_sol = {}
         mapa_desc = {}
 
-        for row in sheet.iter_rows(min_row=2, values_only=True):
+        for row in rows[1:]:
             if not row or len(row) <= max(idx_ref, idx_item):
                 continue
             
@@ -94,11 +98,10 @@ async def escrever_no_pdf_original(
                 page_width = float(page.mediabox.width)
                 page_height = float(page.mediabox.height)
 
-                # Coleta as anotações necessárias primeiro
                 anotacoes_pagina = []
 
                 def visitor_body(text, cm, tm, font_dict, font_size):
-                    if not text:
+                    if not text or not cm or len(cm) < 6:
                         return
 
                     texto_limpo = str(text).strip()
@@ -135,10 +138,10 @@ async def escrever_no_pdf_original(
                                     "descricao": "SEM DESCRIÇÃO"
                                 })
 
-                # Varre a página para extrair as posições
+                # Extrai texto com segurança
                 page.extract_text(visitor_text=visitor_body)
 
-                # Desenha no Canvas apenas se houver textos a inserir
+                # Desenha o Overlay apenas se houver o que escrever
                 if anotacoes_pagina:
                     packet = io.BytesIO()
                     can = canvas.Canvas(packet, pagesize=(page_width, page_height))
@@ -157,6 +160,7 @@ async def escrever_no_pdf_original(
                 writer.add_page(page)
 
             except Exception as page_err:
+                # Em caso de página corrompida, preserva a página original sem travar a requisição
                 print(f"Erro ao processar página: {str(page_err)}")
                 writer.add_page(page)
 
