@@ -1,5 +1,8 @@
 fastapi
+python-multipart
+pandas
+openpyxl
 pypdf
 reportlab
-openpyxl
-python-multipart
+pdfplumber
+pdfminer.six
