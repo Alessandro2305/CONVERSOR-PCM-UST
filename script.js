@@ -22,6 +22,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const tbody = document.getElementById("tabelaDados");
     const contadorItens = document.getElementById("contadorItens");
 
+    // Rota corrigida com o prefixo /api/ obrigatório para a Vercel
+    const API_ENDPOINT = '/api/escrever-no-pdf-original';
+
     // Formata o tamanho do arquivo para KB/MB
     function formatBytes(bytes) {
         if (bytes === 0) return '0 Bytes';
@@ -29,6 +32,16 @@ document.addEventListener("DOMContentLoaded", () => {
         const sizes = ['Bytes', 'KB', 'MB', 'GB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    // Sanitização simples para evitar XSS ao injetar HTML
+    function escapeHtml(str) {
+        return String(str ?? '—')
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
     }
 
     // Atualiza etapa visual do Stepper (1, 2, 3 ou 4)
@@ -101,14 +114,20 @@ document.addEventListener("DOMContentLoaded", () => {
         btnProcessar.disabled = true;
 
         try {
-            const response = await fetch('/escrever-no-pdf-original/', {
+            const response = await fetch(API_ENDPOINT, {
                 method: 'POST',
                 body: formData
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || "Erro no processamento do servidor.");
+                let detErro = "Erro interno no servidor de processamento.";
+                try {
+                    const errorData = await response.json();
+                    if (errorData.detail) detErro = errorData.detail;
+                } catch (_) {
+                    // Trata respostas retornadas em HTML pela Vercel em erros 500
+                }
+                throw new Error(detErro);
             }
 
             const data = await response.json();
@@ -173,9 +192,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
             tr.innerHTML = `
                 <td>${badgeHtml}</td>
-                <td>${item.codigo_original || '—'}</td>
-                <td class="sol-code">${item.codigo_sol || '—'}</td>
-                <td>${item.descricao || '—'}</td>
+                <td>${escapeHtml(item.codigo_original)}</td>
+                <td class="sol-code">${escapeHtml(item.codigo_sol)}</td>
+                <td>${escapeHtml(item.descricao)}</td>
             `;
 
             tbody.appendChild(tr);
