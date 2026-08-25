@@ -1,4 +1,3 @@
-
 {
   "builds": [
     {
@@ -6,17 +5,13 @@
       "use": "@vercel/python"
     },
     {
-      "src": "*",
+      "src": "index.html",
       "use": "@vercel/static"
     }
   ],
   "routes": [
     {
-      "src": "/escrever-no-pdf-original",
-      "dest": "api/index.py"
-    },
-    {
-      "src": "/escrever-no-pdf-original/",
+      "src": "/escrever-no-pdf-original/?",
       "dest": "api/index.py"
     },
     {
