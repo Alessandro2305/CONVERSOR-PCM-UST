@@ -122,10 +122,12 @@ Document.addEventListener("DOMContentLoaded", () => {
         btnProcessar.disabled = true;
 
         try {
-            const response = await fetch('/escrever-no-pdf-original/', {
-                method: 'POST',
-                body: formData
-            });
+            // Substitua o trecho do fetch no script.js por:
+const response = await fetch('/escrever-no-pdf-original', {
+    method: 'POST',
+    body: formData
+});
+
 
             if (!response.ok) {
                 const errorData = await response.json();
