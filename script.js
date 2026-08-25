@@ -154,24 +154,20 @@ document.addEventListener("DOMContentLoaded", () => {
             renderizarTabelaEMetricas(itensProcessados);
 
             // 2. Faz o download automático do PDF processado (Base64 -> Blob)
-            if (data.pdf_base64) {
-                const byteCharacters = atob(data.pdf_base64);
-                const byteNumbers = new Array(byteCharacters.length);
-                for (let i = 0; i < byteCharacters.length; i++) {
-                    byteNumbers[i] = byteCharacters.charCodeAt(i);
-                }
-                const byteArray = new Uint8Array(byteNumbers);
-                const blob = new Blob([byteArray], { type: 'application/pdf' });
+      // Substituição do bloco de conversão Base64 -> Blob:
+if (data.pdf_base64) {
+    const res = await fetch(`data:application/pdf;base64,${data.pdf_base64}`);
+    const blob = await res.blob();
 
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'Orcamento_SOL.pdf';
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                window.URL.revokeObjectURL(url);
-            }
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'Orcamento_SOL.pdf';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+}
 
             setStep(3);
 
