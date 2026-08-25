@@ -22,8 +22,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const tbody = document.getElementById("tabelaDados");
     const contadorItens = document.getElementById("contadorItens");
 
-    // Endpoint relativo universal da Vercel
-    const API_ENDPOINT = '/api/escrever-no-pdf-original';
+    // ENDPOINT OFICIAL NO RENDER
+    const API_ENDPOINT = 'https://conversor-pcm-ust.onrender.com/api/escrever-no-pdf-original';
 
     function formatBytes(bytes) {
         if (bytes === 0) return '0 Bytes';
@@ -104,7 +104,7 @@ document.addEventListener("DOMContentLoaded", () => {
         formData.append("excel_depara", fileExcel);
 
         const textoOriginalBotao = btnProcessar.innerHTML;
-        btnProcessar.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Processando...`;
+        btnProcessar.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Processando... (Aguarde)`;
         btnProcessar.disabled = true;
 
         try {
@@ -114,7 +114,7 @@ document.addEventListener("DOMContentLoaded", () => {
             });
 
             if (!response.ok) {
-                let detErro = "Erro no processamento do servidor.";
+                let detErro = "Erro no servidor de processamento.";
                 try {
                     const errorData = await response.json();
                     if (errorData.detail) detErro = errorData.detail;
@@ -124,10 +124,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const data = await response.json();
 
-            // 1. Atualiza a interface
+            // 1. Atualiza tabela e métricas
             renderizarTabelaEMetricas(data.itens || []);
 
-            // 2. Download Universal compatível com todos os dispositivos
+            // 2. Download do PDF
             if (data.pdf_base64) {
                 const byteCharacters = atob(data.pdf_base64);
                 const byteNumbers = new Array(byteCharacters.length);
@@ -136,25 +136,26 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
                 const byteArray = new Uint8Array(byteNumbers);
                 const blob = new Blob([byteArray], { type: 'application/pdf' });
-                
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(blob);
-                link.download = 'Orcamento_SOL_Convertido.pdf';
-                link.style.display = 'none';
-                document.body.appendChild(link);
-                link.click();
-                
-                setTimeout(() => {
-                    URL.revokeObjectURL(link.href);
-                    link.remove();
-                }, 100);
+                const blobUrl = URL.createObjectURL(blob);
+
+                const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                if (isMobile) {
+                    window.open(blobUrl, '_blank');
+                } else {
+                    const a = document.createElement('a');
+                    a.href = blobUrl;
+                    a.download = 'Orcamento_SOL_Convertido.pdf';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                }
             }
 
             setStep(3);
 
         } catch (error) {
             console.error("Erro no processamento:", error);
-            alert(`Falha ao processar: ${error.message}`);
+            alert(`Falha no processamento: ${error.message}`);
         } finally {
             btnProcessar.innerHTML = textoOriginalBotao;
             btnProcessar.disabled = false;
