@@ -137,23 +137,29 @@ document.addEventListener("DOMContentLoaded", () => {
 
             // 2. Faz o download do PDF gerado a partir do Base64
             if (data.pdf_base64) {
-                const byteCharacters = atob(data.pdf_base64);
-                const byteNumbers = new Array(byteCharacters.length);
-                for (let i = 0; i < byteCharacters.length; i++) {
-                    byteNumbers[i] = byteCharacters.charCodeAt(i);
-                }
-                const byteArray = new Uint8Array(byteNumbers);
-                const blob = new Blob([byteArray], { type: 'application/pdf' });
+    const byteCharacters = atob(data.pdf_base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: 'application/pdf' });
+    const url = window.URL.createObjectURL(blob);
 
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'Orcamento_SOL.pdf';
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                window.URL.revokeObjectURL(url);
-            }
+    // Compatibilidade mobile: em celulares, abre diretamente em nova aba se o download automático falhar
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    
+    if (isMobile) {
+        window.open(url, '_blank');
+    } else {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'Orcamento_SOL.pdf';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+    }
+}
 
             setStep(3);
 
