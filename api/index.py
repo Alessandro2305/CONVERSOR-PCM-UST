@@ -59,19 +59,19 @@ async def escrever_no_pdf_original(
 
         # 2. Processar PDF
         pdf_bytes = await pdf_file.read()
-        reader = PdfReader(io.BytesIO(pdf_bytes))
+        reader_base = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
 
         itens_encontrados = []
         codigos_processados = set()
 
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf_plumber:
-            for page_idx, page in enumerate(reader.pages):
-                plumber_page = pdf_plumber.pages[page_idx]
+            for page_idx, plumber_page in enumerate(pdf_plumber.pages):
+                page_base = reader_base.pages[page_idx]
                 words = plumber_page.extract_words()
 
-                page_width = float(page.mediabox.width)
-                page_height = float(page.mediabox.height)
+                page_width = float(plumber_page.width)
+                page_height = float(plumber_page.height)
 
                 packet = io.BytesIO()
                 can = canvas.Canvas(packet, pagesize=(page_width, page_height))
@@ -83,13 +83,12 @@ async def escrever_no_pdf_original(
 
                     # REGRAS DE RECONHECIMENTO PRECISO DE PEÇAS:
                     # 1. Posição X < 130pt (Coluna de Códigos)
-                    # 2. Texto termina com 'CNH' OU o código limpo está presente na planilha Excel
+                    # 2. Texto termina com 'CNH' OU o código limpo está presente no Excel
                     # 3. Não é uma data (não contém '/')
                     eh_codigo_peca = (texto.upper().endswith("CNH") or cod_limpo in mapa_sol)
                     
                     if word['x0'] < 130 and "/" not in texto and eh_codigo_peca:
                         
-                        # Verifica se o código tem correspondência no De/Para da planilha
                         if cod_limpo in mapa_sol:
                             raw_sol = mapa_sol[cod_limpo]
                             descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
@@ -116,7 +115,6 @@ async def escrever_no_pdf_original(
                             escreveu_algo = True
 
                         else:
-                            # Peça identificada na coluna de código mas não existente no Excel De/Para
                             if cod_limpo and cod_limpo not in codigos_processados:
                                 codigos_processados.add(cod_limpo)
                                 itens_encontrados.append({
@@ -132,9 +130,9 @@ async def escrever_no_pdf_original(
                 if escreveu_algo:
                     overlay_pdf = PdfReader(packet)
                     if len(overlay_pdf.pages) > 0:
-                        page.merge_page(overlay_pdf.pages[0])
+                        page_base.merge_page(overlay_pdf.pages[0])
 
-                writer.add_page(page)
+                writer.add_page(page_base)
 
         output_stream = io.BytesIO()
         writer.write(output_stream)
