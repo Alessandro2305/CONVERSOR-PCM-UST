@@ -22,7 +22,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const tbody = document.getElementById("tabelaDados");
     const contadorItens = document.getElementById("contadorItens");
 
-    // Rota corrigida com o prefixo /api/ obrigatório para a Vercel
+    // Endpoint relativo para as Serverless Functions da Vercel
     const API_ENDPOINT = '/api/escrever-no-pdf-original';
 
     // Formata o tamanho do arquivo para KB/MB
@@ -34,7 +34,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
-    // Sanitização simples para evitar XSS ao injetar HTML
+    // Sanitização de strings para injeção no DOM
     function escapeHtml(str) {
         return String(str ?? '—')
             .replace(/&/g, "&amp;")
@@ -44,7 +44,7 @@ document.addEventListener("DOMContentLoaded", () => {
             .replace(/'/g, "&#039;");
     }
 
-    // Atualiza etapa visual do Stepper (1, 2, 3 ou 4)
+    // Atualiza etapa visual do Stepper
     function setStep(stepNumber) {
         const boxes = document.querySelectorAll(".container-box .box");
         boxes.forEach((box, index) => {
@@ -125,7 +125,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     const errorData = await response.json();
                     if (errorData.detail) detErro = errorData.detail;
                 } catch (_) {
-                    // Trata respostas retornadas em HTML pela Vercel em erros 500
+                    // Trata retornos estruturados em HTML caso ocorra erro 500 na infraestrutura
                 }
                 throw new Error(detErro);
             }
