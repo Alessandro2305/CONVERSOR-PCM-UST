@@ -24,6 +24,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let itensProcessados = [];
 
+    // Função utilitária para higienização contra XSS
+    function escapeHtml(str) {
+        return String(str ?? '—')
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
     // Formata o tamanho do arquivo para KB/MB
     function formatBytes(bytes) {
         if (bytes === 0) return '0 Bytes';
@@ -54,23 +64,19 @@ document.addEventListener("DOMContentLoaded", () => {
         if (contadorItens) contadorItens.textContent = `${total} itens identificados`;
     }
 
-    // --- CORREÇÃO DO CLIQUE DE SELEÇÃO DE ARQUIVOS ---
+    // Disparo manual do input de arquivos
     const cardPdf = pdfInput?.closest('.upload-caixa')?.querySelector('.drop-card');
     const cardExcel = excelInput?.closest('.upload-caixa')?.querySelector('.drop-card');
 
     cardPdf?.addEventListener('click', (e) => {
-        if (e.target !== pdfInput) {
-            pdfInput.click();
-        }
+        if (e.target !== pdfInput) pdfInput?.click();
     });
 
     cardExcel?.addEventListener('click', (e) => {
-        if (e.target !== excelInput) {
-            excelInput.click();
-        }
+        if (e.target !== excelInput) excelInput?.click();
     });
 
-    // Evento de alteração do arquivo PDF
+    // Eventos de alteração dos inputs de arquivo
     pdfInput?.addEventListener("change", (e) => {
         const file = e.target.files[0];
         if (file) {
@@ -81,7 +87,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    // Evento de alteração da planilha Excel
     excelInput?.addEventListener("change", (e) => {
         const file = e.target.files[0];
         if (file) {
@@ -100,7 +105,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // Suporte a Drag and Drop nas caixas de upload
+    // Suporte a Drag and Drop nas caixas de upload usando DataTransfer
     document.querySelectorAll(".drop-card").forEach(dropArea => {
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             dropArea.addEventListener(eventName, e => e.preventDefault());
@@ -112,13 +117,15 @@ document.addEventListener("DOMContentLoaded", () => {
             const input = dropArea.querySelector('input[type="file"]');
             
             if (files.length > 0 && input) {
-                input.files = files;
+                const container = new DataTransfer();
+                container.items.add(files[0]);
+                input.files = container.files;
                 input.dispatchEvent(new Event('change'));
             }
         });
     });
 
-    // Processar Arquivos via API Serverless da Vercel
+    // Processar Arquivos via API Serverless
     btnProcessar?.addEventListener("click", async () => {
         const filePdf = pdfInput?.files[0];
         const fileExcel = excelInput?.files[0];
@@ -143,31 +150,30 @@ document.addEventListener("DOMContentLoaded", () => {
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
+                const errorData = await response.json().catch(() => ({}));
                 throw new Error(errorData.detail || "Erro no processamento do servidor.");
             }
 
             const data = await response.json();
             itensProcessados = data.itens || [];
 
-            // 1. Renderiza a tabela e atualiza os cards de métricas
+            // Renderiza dados na interface
             renderizarTabelaEMetricas(itensProcessados);
 
-            // 2. Faz o download automático do PDF processado (Base64 -> Blob)
-      // Substituição do bloco de conversão Base64 -> Blob:
-if (data.pdf_base64) {
-    const res = await fetch(`data:application/pdf;base64,${data.pdf_base64}`);
-    const blob = await res.blob();
+            // Download automático do PDF
+            if (data.pdf_base64) {
+                const res = await fetch(`data:application/pdf;base64,${data.pdf_base64}`);
+                const blob = await res.blob();
 
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'Orcamento_SOL.pdf';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(url);
-}
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'Orcamento_SOL.pdf';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+            }
 
             setStep(3);
 
@@ -180,7 +186,7 @@ if (data.pdf_base64) {
         }
     });
 
-    // Renderiza itens dinamicamente na tabela
+    // Renderização segura da tabela e atualização de métricas
     function renderizarTabelaEMetricas(listaItens) {
         if (!tbody) return;
         tbody.innerHTML = "";
@@ -206,9 +212,9 @@ if (data.pdf_base64) {
 
             tr.innerHTML = `
                 <td>${badgeHtml}</td>
-                <td>${item.codigo_original || '—'}</td>
-                <td class="sol-code">${item.codigo_sol || '—'}</td>
-                <td>${item.descricao || '—'}</td>
+                <td>${escapeHtml(item.codigo_original)}</td>
+                <td class="sol-code">${escapeHtml(item.codigo_sol)}</td>
+                <td>${escapeHtml(item.descricao)}</td>
             `;
 
             tbody.appendChild(tr);
@@ -227,10 +233,10 @@ if (data.pdf_base64) {
         setStep(4);
 
         const dadosFormatados = itensProcessados.map(item => ({
-            "Status": item.status,
-            "Código Original": item.codigo_original,
-            "Código SOL": item.codigo_sol,
-            "Descrição": item.descricao
+            "Status": item.status || '',
+            "Código Original": item.codigo_original || '',
+            "Código SOL": item.codigo_sol || '',
+            "Descrição": item.descricao || ''
         }));
 
         const worksheet = XLSX.utils.json_to_sheet(dadosFormatados);
@@ -240,7 +246,7 @@ if (data.pdf_base64) {
         XLSX.writeFile(workbook, "Resultado_Conversao_PCM.xlsx");
     });
 
-    // Botão Limpar
+    // Reset completo do formulário e interface
     btnLimpar?.addEventListener("click", () => {
         if (pdfInput) pdfInput.value = "";
         if (excelInput) excelInput.value = "";
