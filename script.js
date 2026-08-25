@@ -22,10 +22,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const tbody = document.getElementById("tabelaDados");
     const contadorItens = document.getElementById("contadorItens");
 
-    // Endpoint relativo para funcionar em qualquer dispositivo/rede na Vercel
+    // Endpoint relativo universal da Vercel
     const API_ENDPOINT = '/api/escrever-no-pdf-original';
 
-    // Formata o tamanho do arquivo para KB/MB
     function formatBytes(bytes) {
         if (bytes === 0) return '0 Bytes';
         const k = 1024;
@@ -34,7 +33,6 @@ document.addEventListener("DOMContentLoaded", () => {
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
-    // Sanitização de strings para injeção no DOM
     function escapeHtml(str) {
         return String(str ?? '—')
             .replace(/&/g, "&amp;")
@@ -44,7 +42,6 @@ document.addEventListener("DOMContentLoaded", () => {
             .replace(/'/g, "&#039;");
     }
 
-    // Atualiza etapa visual do Stepper
     function setStep(stepNumber) {
         const boxes = document.querySelectorAll(".container-box .box");
         boxes.forEach((box, index) => {
@@ -56,7 +53,6 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Atualiza as métricas no painel de cards
     function atualizarMetricas(total = 0, convertidos = 0, pendentes = 0, naoEncontrados = 0) {
         if (mTotal) mTotal.textContent = total;
         if (mConvertidos) mConvertidos.textContent = convertidos;
@@ -65,7 +61,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (contadorItens) contadorItens.textContent = `${total} itens identificados`;
     }
 
-    // Evento seleção de PDF
     pdfInput?.addEventListener("change", (e) => {
         const file = e.target.files[0];
         if (file) {
@@ -76,7 +71,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    // Evento seleção de Excel
     excelInput?.addEventListener("change", (e) => {
         const file = e.target.files[0];
         if (file) {
@@ -120,22 +114,20 @@ document.addEventListener("DOMContentLoaded", () => {
             });
 
             if (!response.ok) {
-                let detErro = "Erro interno no servidor de processamento.";
+                let detErro = "Erro no processamento do servidor.";
                 try {
                     const errorData = await response.json();
                     if (errorData.detail) detErro = errorData.detail;
-                } catch (_) {
-                    // Trata retornos estruturados em HTML caso ocorra erro 500 na infraestrutura
-                }
+                } catch (_) {}
                 throw new Error(detErro);
             }
 
             const data = await response.json();
 
-            // 1. Popula a tabela e atualiza os cards na tela
+            // 1. Atualiza a interface
             renderizarTabelaEMetricas(data.itens || []);
 
-            // 2. Faz o download do PDF gerado a partir do Base64
+            // 2. Download Universal compatível com todos os dispositivos
             if (data.pdf_base64) {
                 const byteCharacters = atob(data.pdf_base64);
                 const byteNumbers = new Array(byteCharacters.length);
@@ -144,35 +136,31 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
                 const byteArray = new Uint8Array(byteNumbers);
                 const blob = new Blob([byteArray], { type: 'application/pdf' });
-                const url = window.URL.createObjectURL(blob);
-
-                // Compatibilidade mobile: em celulares, abre diretamente em nova aba se o download automático falhar
-                const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-
-                if (isMobile) {
-                    window.open(url, '_blank');
-                } else {
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'Orcamento_SOL.pdf';
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-                }
+                
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = 'Orcamento_SOL_Convertido.pdf';
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                
+                setTimeout(() => {
+                    URL.revokeObjectURL(link.href);
+                    link.remove();
+                }, 100);
             }
 
             setStep(3);
 
         } catch (error) {
             console.error("Erro no processamento:", error);
-            alert(`Falha no processamento: ${error.message}`);
+            alert(`Falha ao processar: ${error.message}`);
         } finally {
             btnProcessar.innerHTML = textoOriginalBotao;
             btnProcessar.disabled = false;
         }
     });
 
-    // Renderiza itens dinamicamente na tabela
     function renderizarTabelaEMetricas(listaItens) {
         if (!tbody) return;
         tbody.innerHTML = "";
@@ -209,13 +197,11 @@ document.addEventListener("DOMContentLoaded", () => {
         atualizarMetricas(listaItens.length, convertidos, pendentes, naoEncontrados);
     }
 
-    // Botão Exportar
     btnExportar?.addEventListener("click", () => {
         setStep(4);
         alert("Resultado pronto para exportação!");
     });
 
-    // Botão Limpar
     btnLimpar?.addEventListener("click", () => {
         if (pdfInput) pdfInput.value = "";
         if (excelInput) excelInput.value = "";
