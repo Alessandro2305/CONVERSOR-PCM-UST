@@ -7,7 +7,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
-from reportlab.lib.colors import HexColor
+from reportlab.lib import colors
 
 app = FastAPI(redirect_slashes=False)
 
@@ -68,7 +68,7 @@ async def escrever_no_pdf_original(
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf_plumber:
             for page_idx, plumber_page in enumerate(pdf_plumber.pages):
                 page_base = reader_base.pages[page_idx]
-                words = plumber_page.extract_words()
+                words = plumber_page.extract_words() or []
 
                 page_width = float(plumber_page.width)
                 page_height = float(plumber_page.height)
@@ -82,9 +82,6 @@ async def escrever_no_pdf_original(
                     cod_limpo = limpar_codigo(texto)
 
                     # REGRAS DE RECONHECIMENTO PRECISO DE PEÇAS:
-                    # 1. Posição X < 130pt (Coluna de Códigos)
-                    # 2. Texto termina com 'CNH' OU o código limpo está presente no Excel
-                    # 3. Não é uma data (não contém '/')
                     eh_codigo_peca = (texto.upper().endswith("CNH") or cod_limpo in mapa_sol)
                     
                     if word['x0'] < 130 and "/" not in texto and eh_codigo_peca:
@@ -110,7 +107,7 @@ async def escrever_no_pdf_original(
                             y_baseline = page_height - y_top - (h * 0.75)
 
                             can.setFont("Helvetica-Bold", 6)
-                            can.setFillColor(HexColor("#2563eb"))
+                            can.setFillColor(colors.HexColor("#2563eb"))
                             can.drawString(x_fim_codigo + 4, y_baseline, cod_sol)
                             escreveu_algo = True
 
@@ -124,10 +121,9 @@ async def escrever_no_pdf_original(
                                     "descricao": "SEM DESCRIÇÃO"
                                 })
 
-                can.save()
-                packet.seek(0)
-
                 if escreveu_algo:
+                    can.save()
+                    packet.seek(0)
                     overlay_pdf = PdfReader(packet)
                     if len(overlay_pdf.pages) > 0:
                         page_base.merge_page(overlay_pdf.pages[0])
@@ -145,6 +141,8 @@ async def escrever_no_pdf_original(
             "itens": itens_encontrados
         }
 
+    except HTTPException as http_exc:
+        raise http_exc
     except Exception as e:
         print(f"Erro ao modificar PDF: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Erro interno no processamento: {str(e)}")
