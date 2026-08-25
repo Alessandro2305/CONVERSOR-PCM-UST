@@ -5,7 +5,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const pdfName = document.getElementById("pdfName");
     const pdfSize = document.getElementById("pdfSize");
     const pdfCheck = document.getElementById("pdfCheck");
-    
+
     const excelName = document.getElementById("excelName");
     const excelSize = document.getElementById("excelSize");
     const excelCheck = document.getElementById("excelCheck");
@@ -22,7 +22,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const tbody = document.getElementById("tabelaDados");
     const contadorItens = document.getElementById("contadorItens");
 
-    // Endpoint relativo para as Serverless Functions da Vercel
+    // Endpoint relativo para funcionar em qualquer dispositivo/rede na Vercel
     const API_ENDPOINT = '/api/escrever-no-pdf-original';
 
     // Formata o tamanho do arquivo para KB/MB
@@ -137,29 +137,29 @@ document.addEventListener("DOMContentLoaded", () => {
 
             // 2. Faz o download do PDF gerado a partir do Base64
             if (data.pdf_base64) {
-    const byteCharacters = atob(data.pdf_base64);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { type: 'application/pdf' });
-    const url = window.URL.createObjectURL(blob);
+                const byteCharacters = atob(data.pdf_base64);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], { type: 'application/pdf' });
+                const url = window.URL.createObjectURL(blob);
 
-    // Compatibilidade mobile: em celulares, abre diretamente em nova aba se o download automático falhar
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    
-    if (isMobile) {
-        window.open(url, '_blank');
-    } else {
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'Orcamento_SOL.pdf';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-    }
-}
+                // Compatibilidade mobile: em celulares, abre diretamente em nova aba se o download automático falhar
+                const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+                if (isMobile) {
+                    window.open(url, '_blank');
+                } else {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'Orcamento_SOL.pdf';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                }
+            }
 
             setStep(3);
 
@@ -219,7 +219,7 @@ document.addEventListener("DOMContentLoaded", () => {
     btnLimpar?.addEventListener("click", () => {
         if (pdfInput) pdfInput.value = "";
         if (excelInput) excelInput.value = "";
-        
+
         if (pdfName) pdfName.textContent = "Selecione o PDF...";
         if (pdfSize) pdfSize.textContent = "";
         if (pdfCheck) pdfCheck.style.display = "none";
