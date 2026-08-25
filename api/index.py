@@ -1,16 +1,18 @@
 import io
 import re
 import base64
+import traceback
 import pandas as pd
 import pdfplumber
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import HexColor
 
-app = FastAPI(redirect_slashes=False)
+app = FastAPI()
 
+# Permite chamadas CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,32 +21,42 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def limpar_codigo(codigo) -> str:
-    if pd.isna(codigo) or codigo is None:
+# Função auxiliar para higienizar os códigos (remove caracteres especiais)
+def limpar_codigo(val):
+    if pd.isna(val) or val is None:
         return ""
-    # Remove qualquer caractere que não seja número (ex: "84561324CNH" -> "84561324")
-    return re.sub(r'\D', '', str(codigo)).strip()
+    val_str = str(val).strip()
+    # Remove pontuações e formatações para facilitar a comparação
+    return re.sub(r'[^A-Za-z0-9]', '', val_str).upper()
 
-@app.post("/escrever-no-pdf-original/")
+
+@app.post("/api/escrever-no-pdf-original")
 @app.post("/escrever-no-pdf-original")
 async def escrever_no_pdf_original(
     pdf_file: UploadFile = File(...),
     excel_depara: UploadFile = File(...)
 ):
     try:
-        # 1. Carregar Planilha Excel
+        # 1. Lê os bytes na memória
+        pdf_bytes = await pdf_file.read()
         excel_bytes = await excel_depara.read()
+
+        # 2. Carregar Planilha Excel (De/Para)
         try:
             df_depara = pd.read_excel(io.BytesIO(excel_bytes), engine='openpyxl')
         except Exception:
             df_depara = pd.read_excel(io.BytesIO(excel_bytes))
 
+        # Localiza dinamicamente as colunas necessárias
         col_ref = next((c for c in df_depara.columns if "REF" in str(c).upper()), None)
         col_item = next((c for c in df_depara.columns if "ITEM" in str(c).upper() or "CÓDIGO" in str(c).upper() or "CODIGO" in str(c).upper()), None)
         col_desc = next((c for c in df_depara.columns if "DESC" in str(c).upper()), None)
 
         if not col_ref or not col_item:
-            raise HTTPException(status_code=400, detail="Colunas 'Referencia' e 'Código Item' não encontradas no Excel.")
+            raise HTTPException(
+                status_code=400, 
+                detail="Colunas 'Referencia' e 'Código Item' não foram identificadas na planilha Excel."
+            )
 
         mapa_sol = {}
         mapa_desc = {}
@@ -57,8 +69,7 @@ async def escrever_no_pdf_original(
                 if col_desc and pd.notna(row[col_desc]):
                     mapa_desc[chave] = str(row[col_desc]).strip()
 
-        # 2. Processar PDF
-        pdf_bytes = await pdf_file.read()
+        # 3. Processar PDF
         reader = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
 
@@ -81,15 +92,11 @@ async def escrever_no_pdf_original(
                     texto = word['text'].strip()
                     cod_limpo = limpar_codigo(texto)
 
-                    # REGRAS DE RECONHECIMENTO PRECISO DE PEÇAS:
-                    # 1. Posição X < 130pt (Coluna de Códigos)
-                    # 2. Texto termina com 'CNH' OU o código limpo está presente na planilha Excel
-                    # 3. Não é uma data (não contém '/')
+                    # REGRAS DE RECONHECIMENTO DE PEÇAS:
                     eh_codigo_peca = (texto.upper().endswith("CNH") or cod_limpo in mapa_sol)
-                    
+
                     if word['x0'] < 130 and "/" not in texto and eh_codigo_peca:
                         
-                        # Verifica se o código tem correspondência no De/Para da planilha
                         if cod_limpo in mapa_sol:
                             raw_sol = mapa_sol[cod_limpo]
                             descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
@@ -104,7 +111,7 @@ async def escrever_no_pdf_original(
                                     "descricao": descricao
                                 })
 
-                            # Posição exata no PDF
+                            # Posição exata no PDF para escrita
                             x_fim_codigo = word['x1']
                             y_top = word['top']
                             h = word['bottom'] - word['top']
@@ -116,7 +123,6 @@ async def escrever_no_pdf_original(
                             escreveu_algo = True
 
                         else:
-                            # Peça identificada na coluna de código mas não existente no Excel De/Para
                             if cod_limpo and cod_limpo not in codigos_processados:
                                 codigos_processados.add(cod_limpo)
                                 itens_encontrados.append({
@@ -136,6 +142,7 @@ async def escrever_no_pdf_original(
 
                 writer.add_page(page)
 
+        # 4. Finalização e retorno do Stream do PDF
         output_stream = io.BytesIO()
         writer.write(output_stream)
         output_stream.seek(0)
@@ -143,10 +150,12 @@ async def escrever_no_pdf_original(
         pdf_b64 = base64.b64encode(output_stream.getvalue()).decode('utf-8')
 
         return {
-            "pdf_base64": pdf_b64,
-            "itens": itens_encontrados
+            "itens": itens_encontrados,
+            "pdf_base64": pdf_b64
         }
 
+    except HTTPException as http_ex:
+        raise http_ex
     except Exception as e:
-        print(f"Erro ao modificar PDF: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        print("ERRO NO PROCESSAMENTO:", traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Erro no Python: {str(e)}")
