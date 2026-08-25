@@ -1,3 +1,4 @@
+
 {
   "builds": [
     {
@@ -11,11 +12,11 @@
   ],
   "routes": [
     {
-      "src": "/escrever-no-pdf-original/(.*)",
+      "src": "/escrever-no-pdf-original",
       "dest": "api/index.py"
     },
     {
-      "src": "/escrever-no-pdf-original",
+      "src": "/escrever-no-pdf-original/",
       "dest": "api/index.py"
     },
     {
