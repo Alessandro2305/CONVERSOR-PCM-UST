@@ -1,4 +1,4 @@
-document.addEventListener("DOMContentLoaded", () => {
+Document.addEventListener("DOMContentLoaded", () => {
     // Elementos da DOM
     const pdfInput = document.getElementById("pdfInput");
     const excelInput = document.getElementById("excelInput");
@@ -21,6 +21,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const tbody = document.getElementById("tabelaDados");
     const contadorItens = document.getElementById("contadorItens");
+
+    // Variável global para armazenar os itens e permitir exportação Excel
+    let itensProcessados = [];
 
     // Formata o tamanho do arquivo para KB/MB
     function formatBytes(bytes) {
@@ -82,6 +85,24 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    // Suporte a Drag and Drop nas caixas de upload
+    document.querySelectorAll(".drop-card").forEach(dropArea => {
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, e => e.preventDefault());
+        });
+
+        dropArea.addEventListener('drop', e => {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            const input = dropArea.querySelector('input[type="file"]');
+            
+            if (files.length > 0 && input) {
+                input.files = files;
+                input.dispatchEvent(new Event('change'));
+            }
+        });
+    });
+
     // Processar Arquivos
     btnProcessar?.addEventListener("click", async () => {
         const filePdf = pdfInput?.files[0];
@@ -112,9 +133,10 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             const data = await response.json();
+            itensProcessados = data.itens || [];
 
             // 1. Popula a tabela e atualiza os cards na tela
-            renderizarTabelaEMetricas(data.itens || []);
+            renderizarTabelaEMetricas(itensProcessados);
 
             // 2. Faz o download do PDF gerado a partir do Base64
             if (data.pdf_base64) {
@@ -184,10 +206,27 @@ document.addEventListener("DOMContentLoaded", () => {
         atualizarMetricas(listaItens.length, convertidos, pendentes, naoEncontrados);
     }
 
-    // Botão Exportar
+    // Botão Exportar Excel usando SheetJS (xlsx.full.min.js)
     btnExportar?.addEventListener("click", () => {
+        if (!itensProcessados || itensProcessados.length === 0) {
+            alert("Nenhum dado disponível para exportação. Processes os arquivos primeiro!");
+            return;
+        }
+
         setStep(4);
-        alert("Resultado pronto para exportação!");
+
+        const dadosFormatados = itensProcessados.map(item => ({
+            "Status": item.status,
+            "Código Original": item.codigo_original,
+            "Código SOL": item.codigo_sol,
+            "Descrição": item.descricao
+        }));
+
+        const worksheet = XLSX.utils.json_to_sheet(dadosFormatados);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Resultados");
+
+        XLSX.writeFile(workbook, "Resultado_Conversao_PCM.xlsx");
     });
 
     // Botão Limpar
@@ -204,6 +243,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (excelCheck) excelCheck.style.display = "none";
 
         if (tbody) tbody.innerHTML = "";
+        itensProcessados = [];
         atualizarMetricas(0, 0, 0, 0);
         setStep(1);
     });
