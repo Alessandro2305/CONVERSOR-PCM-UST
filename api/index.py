@@ -1,8 +1,8 @@
 import io
 import re
 import base64
-import pandas as pd
 import pdfplumber
+import openpyxl
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pypdf import PdfReader, PdfWriter
@@ -20,7 +20,7 @@ app.add_middleware(
 )
 
 def limpar_codigo(codigo) -> str:
-    if pd.isna(codigo) or codigo is None:
+    if codigo is None:
         return ""
     return re.sub(r'\D', '', str(codigo)).strip()
 
@@ -31,53 +31,47 @@ async def escrever_no_pdf_original(
     excel_depara: UploadFile = File(...)
 ):
     try:
-        # 1. Carregar Planilha Excel com múltiplos fallbacks
+        # 1. Carregar Planilha Excel usando openpyxl leve
         excel_bytes = await excel_depara.read()
-        df_depara = None
-        
         try:
-            df_depara = pd.read_excel(io.BytesIO(excel_bytes), engine='openpyxl')
-        except Exception:
-            try:
-                df_depara = pd.read_excel(io.BytesIO(excel_bytes), engine='xlrd')
-            except Exception:
-                try:
-                    df_depara = pd.read_excel(io.BytesIO(excel_bytes))
-                except Exception as ex_excel:
-                    raise HTTPException(
-                        status_code=400, 
-                        detail=f"Não foi possível ler o arquivo Excel. Verifique se o formato é válido (.xlsx ou .xls). Erro: {str(ex_excel)}"
-                    )
+            wb = openpyxl.load_workbook(filename=io.BytesIO(excel_bytes), data_only=True)
+            sheet = wb.active
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Erro ao abrir arquivo Excel. Envie no formato .xlsx. Detalhe: {str(e)}")
 
-        # Mapeamento dinâmico de colunas
-        col_ref = next((c for c in df_depara.columns if "REF" in str(c).upper()), None)
-        col_item = next((c for c in df_depara.columns if any(k in str(c).upper() for k in ["ITEM", "CÓDIGO", "CODIGO"])), None)
-        col_desc = next((c for c in df_depara.columns if "DESC" in str(c).upper()), None)
+        # Mapeamento de colunas no Excel
+        header = [str(cell.value or '').upper() for cell in sheet[1]]
+        
+        idx_ref = next((i for i, h in enumerate(header) if "REF" in h), None)
+        idx_item = next((i for i, h in enumerate(header) if any(k in h for k in ["ITEM", "CÓDIGO", "CODIGO"])), None)
+        idx_desc = next((i for i, h in enumerate(header) if "DESC" in h), None)
 
-        if not col_ref or not col_item:
-            colunas_encontradas = ", ".join([str(c) for c in df_depara.columns])
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Colunas necessárias não encontradas no Excel. Colunas detectadas: [{colunas_encontradas}]"
-            )
+        if idx_ref is None or idx_item is None:
+            raise HTTPException(status_code=400, detail=f"Colunas do Excel não identificadas. Encontradas: {header}")
 
         mapa_sol = {}
         mapa_desc = {}
-        for _, row in df_depara.iterrows():
-            chave = limpar_codigo(row[col_ref])
+
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            if not row or len(row) <= max(idx_ref, idx_item):
+                continue
+            
+            ref_val = row[idx_ref]
+            chave = limpar_codigo(ref_val)
+
             if chave:
-                val_sol = str(row[col_item]).strip()
-                if val_sol and val_sol.lower() != "nan":
-                    mapa_sol[chave] = val_sol.replace(".0", "").replace(".", "").strip()
-                if col_desc and pd.notna(row[col_desc]):
-                    mapa_desc[chave] = str(row[col_desc]).strip()
+                item_val = str(row[idx_item] or '').strip()
+                if item_val and item_val.lower() != "none":
+                    mapa_sol[chave] = item_val.replace(".0", "").replace(".", "").strip()
+                if idx_desc is not None and len(row) > idx_desc and row[idx_desc]:
+                    mapa_desc[chave] = str(row[idx_desc]).strip()
 
         # 2. Processar PDF
         pdf_bytes = await pdf_file.read()
         try:
             reader_base = PdfReader(io.BytesIO(pdf_bytes))
         except Exception as ex_pdf:
-            raise HTTPException(status_code=400, detail=f"Arquivo PDF inválido ou corrompido: {str(ex_pdf)}")
+            raise HTTPException(status_code=400, detail=f"Arquivo PDF corrompido: {str(ex_pdf)}")
 
         writer = PdfWriter()
         itens_encontrados = []
@@ -159,5 +153,4 @@ async def escrever_no_pdf_original(
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        print(f"Erro ao modificar PDF: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Falha de processamento no servidor: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
