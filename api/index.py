@@ -10,8 +10,9 @@ from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import HexColor
 
-app = FastAPI()
+app = FastAPI(title="Conversor PCM UST API")
 
+# Habilita CORS para permitir acessos de qualquer origem/dispositivo
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,8 +25,17 @@ def limpar_codigo(val):
     if pd.isna(val) or val is None:
         return ""
     val_str = str(val).strip()
-    # Remove TUDO que não for número (descarta CNH, letras e pontuações)
     return re.sub(r'[^0-9]', '', val_str)
+
+# Rota raiz para evitar erro 404 ao abrir o link diretamente no navegador
+@app.get("/")
+@app.get("/api")
+def root():
+    return {"status": "ok", "message": "API Conversor PCM UST está online e operacional!"}
+
+@app.get("/health")
+def health():
+    return {"status": "healthy"}
 
 @app.post("/api/escrever-no-pdf-original")
 @app.post("/escrever-no-pdf-original")
@@ -61,7 +71,7 @@ async def escrever_no_pdf_original(
                 if col_desc and pd.notna(row[col_desc]):
                     mapa_desc[chave] = str(row[col_desc]).strip()
 
-        # 2. Processamento do PDF com overlay de coordenadas
+        # 2. Processamento do PDF
         reader = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
         itens_encontrados = []
@@ -70,7 +80,7 @@ async def escrever_no_pdf_original(
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf_plumber:
             for page_idx, page in enumerate(reader.pages):
                 plumber_page = pdf_plumber.pages[page_idx]
-                words = plumber_page.extract_words()
+                words = plumber_page.extract_words(x_tolerance=3, y_tolerance=3)
 
                 page_width = float(page.mediabox.width)
                 page_height = float(page.mediabox.height)
@@ -82,11 +92,8 @@ async def escrever_no_pdf_original(
                 for word in words:
                     texto = word['text'].strip()
                     cod_limpo = limpar_codigo(texto)
-
-                    # Valida se sobraram números suficientes (mínimo 4 dígitos)
                     eh_codigo_valido = len(cod_limpo) >= 4
 
-                    # Filtro de coluna no PDF
                     if word['x0'] < 130 and "/" not in texto and eh_codigo_valido:
                         if cod_limpo in mapa_sol:
                             raw_sol = mapa_sol[cod_limpo]
@@ -102,7 +109,6 @@ async def escrever_no_pdf_original(
                                     "descricao": descricao
                                 })
 
-                            # Calcula posição exata para desenhar o texto azul
                             x_fim_codigo = word['x1']
                             y_top = word['top']
                             h = word['bottom'] - word['top']
