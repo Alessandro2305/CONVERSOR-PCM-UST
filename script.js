@@ -1,4 +1,4 @@
-document.addEventListener("DOMContentLoaded", () => {
+Document.addEventListener("DOMContentLoaded", () => {
     // Elementos da DOM
     const pdfInput = document.getElementById("pdfInput");
     const excelInput = document.getElementById("excelInput");
@@ -24,7 +24,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let itensProcessados = [];
 
-    // Função utilitária para higienização contra XSS
+    // DEFINE O ENDPOINT CORRETO DA API (Ajuste se o domínio for diferente)
+    const API_ENDPOINT = '/api/escrever-no-pdf-original';
+
+    // Função utilitária para conversão de Base64 para Blob sem estouro de memória
+    function base64ToBlob(base64Data, contentType = 'application/pdf') {
+        const byteCharacters = atob(base64Data);
+        const byteArrays = [];
+        const sliceSize = 512;
+
+        for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+            const slice = byteCharacters.slice(offset, offset + sliceSize);
+            const byteNumbers = new Array(slice.length);
+            for (let i = 0; i < slice.length; i++) {
+                byteNumbers[i] = slice.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            byteArrays.push(byteArray);
+        }
+        return new Blob(byteArrays, { type: contentType });
+    }
+
+    // Higienização contra XSS
     function escapeHtml(str) {
         return String(str ?? '—')
             .replace(/&/g, "&amp;")
@@ -34,7 +55,7 @@ document.addEventListener("DOMContentLoaded", () => {
             .replace(/'/g, "&#039;");
     }
 
-    // Formata o tamanho do arquivo para KB/MB
+    // Formata tamanho em KB/MB
     function formatBytes(bytes) {
         if (bytes === 0) return '0 Bytes';
         const k = 1024;
@@ -43,7 +64,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
-    // Atualiza etapa visual do Stepper (1, 2, 3 ou 4)
+    // Atualiza etapa visual do Stepper
     function setStep(stepNumber) {
         const boxes = document.querySelectorAll(".container-box .box");
         boxes.forEach((box, index) => {
@@ -55,7 +76,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Atualiza as métricas no painel de cards
+    // Atualiza métricas
     function atualizarMetricas(total = 0, convertidos = 0, pendentes = 0, naoEncontrados = 0) {
         if (mTotal) mTotal.textContent = total;
         if (mConvertidos) mConvertidos.textContent = convertidos;
@@ -76,7 +97,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (e.target !== excelInput) excelInput?.click();
     });
 
-    // Eventos de alteração dos inputs de arquivo
+    // Eventos de alteração dos inputs
     pdfInput?.addEventListener("change", (e) => {
         const file = e.target.files[0];
         if (file) {
@@ -105,7 +126,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // Suporte a Drag and Drop nas caixas de upload usando DataTransfer
+    // Suporte a Drag and Drop
     document.querySelectorAll(".drop-card").forEach(dropArea => {
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             dropArea.addEventListener(eventName, e => e.preventDefault());
@@ -144,14 +165,20 @@ document.addEventListener("DOMContentLoaded", () => {
         btnProcessar.disabled = true;
 
         try {
-            const response = await fetch('/escrever-no-pdf-original', {
+            const response = await fetch(API_ENDPOINT, {
                 method: 'POST',
                 body: formData
             });
 
             if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.detail || "Erro no processamento do servidor.");
+                let mensagemErro = `Erro ${response.status}: Falha de comunicação com o servidor.`;
+                try {
+                    const errorData = await response.json();
+                    if (errorData.detail) mensagemErro = errorData.detail;
+                } catch (_) {
+                    // Trata retornos que não sejam JSON (ex: HTML de erro 500 do servidor)
+                }
+                throw new Error(mensagemErro);
             }
 
             const data = await response.json();
@@ -160,11 +187,9 @@ document.addEventListener("DOMContentLoaded", () => {
             // Renderiza dados na interface
             renderizarTabelaEMetricas(itensProcessados);
 
-            // Download automático do PDF
+            // Download automático e otimizado do PDF
             if (data.pdf_base64) {
-                const res = await fetch(`data:application/pdf;base64,${data.pdf_base64}`);
-                const blob = await res.blob();
-
+                const blob = base64ToBlob(data.pdf_base64, 'application/pdf');
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
@@ -246,7 +271,7 @@ document.addEventListener("DOMContentLoaded", () => {
         XLSX.writeFile(workbook, "Resultado_Conversao_PCM.xlsx");
     });
 
-    // Reset completo do formulário e interface
+    // Reset completo do formulário
     btnLimpar?.addEventListener("click", () => {
         if (pdfInput) pdfInput.value = "";
         if (excelInput) excelInput.value = "";
