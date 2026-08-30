@@ -19,14 +19,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def extrair_numeros_chaves(texto) -> str:
-    if texto is None:
+def extrair_apenas_codigo_limpo(texto) -> str:
+    """ Remove CNH, CASE, espaços e caracteres especiais """
+    if not texto:
         return ""
     txt = str(texto).upper().strip()
-    # Remove palavras/sufixos conhecidos para isolar a chave numerica/alfanumerica core
-    txt = re.sub(r'^(CASE|VALTRA|MERCEDES|VOLVO|JOHN DEERE|CATERPILLAR|SKF|EATON)[-\s]*', '', txt)
     txt = re.sub(r'CNH$', '', txt)
-    # Retorna apenas os caracteres alfanumericos limpos
+    txt = re.sub(r'^CASE[-_\s]*', '', txt)
     return re.sub(r'[^A-Z0-9]', '', txt)
 
 @app.get("/")
@@ -43,14 +42,13 @@ async def escrever_no_pdf_original(
     excel_depara: UploadFile = File(...)
 ):
     try:
-        # 1. Leitura Completa e Mapeamento Tolerante da Planilha Excel
+        # 1. Leitura Completa do Excel
         excel_bytes = await excel_depara.read()
         wb = openpyxl.load_workbook(filename=io.BytesIO(excel_bytes), data_only=True)
 
         mapa_sol = {}
         mapa_desc = {}
 
-        # Mapeia todas as abas priorizando a aba 'C' ou a primeira ativa
         sheet = wb['C'] if 'C' in wb.sheetnames else wb.active
 
         for row in sheet.iter_rows(min_row=2, values_only=True):
@@ -63,19 +61,18 @@ async def escrever_no_pdf_original(
             if not raw_sol or raw_sol.lower() in ["none", "nan"]:
                 continue
 
-            # Mapeia os códigos presentes na Coluna C (idx 2) e demais colunas
             indices = [2, 1, 0] + list(range(3, len(row)))
             for idx in indices:
                 if idx < len(row) and row[idx] is not None:
                     val_str = str(row[idx])
-                    chave_limpa = extrair_numeros_chaves(val_str)
+                    chave_limpa = extrair_apenas_codigo_limpo(val_str)
                     
                     if chave_limpa and len(chave_limpa) >= 3 and chave_limpa not in ["NONE", "NAN"]:
                         if chave_limpa not in mapa_sol:
                             mapa_sol[chave_limpa] = raw_sol
                             mapa_desc[chave_limpa] = raw_desc
 
-        # 2. Leitura do PDF e Cruzamento
+        # 2. Leitura e Inserção Precisa no PDF
         pdf_bytes = await pdf_file.read()
         reader_base = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
@@ -88,77 +85,96 @@ async def escrever_no_pdf_original(
                 page_width = float(page.mediabox.width)
                 page_height = float(page.mediabox.height)
 
-                texto_bruto_pagina = page.extract_text() or ""
-                
-                # Coleta termos alfanuméricos suspeitos de serem códigos
-                candidatos = re.findall(r'\b[A-Z0-9]{4,20}\b', texto_bruto_pagina)
+                # Mapeia dinamicamente o Y da linha do título "PEÇAS, COMPONENTES"
+                y_inicio_tabela = 0
 
-                # Mapeia posições Y dos textos para escrever
-                posicoes_texto = []
-                def visitor_body(text, cm, tm, font_dict, font_size):
+                def MapearCabecalho(text, cm, tm, font_dict, font_size):
+                    nonlocal y_inicio_tabela
                     if not text:
                         return
-                    t = str(text).strip()
-                    if not t:
-                        return
-                    matrix = tm if tm is not None and len(tm) >= 6 else cm
-                    x = matrix[4] if matrix and len(matrix) >= 6 else 0
-                    y = matrix[5] if matrix and len(matrix) >= 6 else 0
-                    posicoes_texto.append((t, x, y))
+                    t = str(text).upper()
+                    if "PECAS" in t or "LUBRIFICANTES" in t or "CÓDIGO" in t or "CODIGO" in t:
+                        matrix = tm if tm is not None and len(tm) >= 6 else cm
+                        if matrix and len(matrix) >= 6:
+                            y = matrix[5]
+                            if y_inicio_tabela == 0 or y < y_inicio_tabela:
+                                y_inicio_tabela = y
 
-                page.extract_text(visitor_text=visitor_body)
+                # Passagem 1: Encontra a altura Y exata de onde começa a tabela
+                page.extract_text(visitor_text=MapearCabecalho)
+
+                # Se não achou a palavra-chave, usa como piso padrão os 45% inferiores da folha
+                if y_inicio_tabela == 0:
+                    y_inicio_tabela = page_height * 0.55
 
                 packet = io.BytesIO()
                 can = canvas.Canvas(packet, pagesize=(page_width, page_height))
                 escreveu_algo = False
 
-                ignorar = {"ORCAMENTO", "SERVICO", "EMITENTE", "ENDERECO", "CLIENTE", "CHASSI", "GARANT", "REVISAO", "CONJUNTO", "TRANSMISSAO", "DESCRICAO", "LUBRIFICANTES", "COMPONENTES", "ZLCF14208", "PARANAVAI", "USACUCAR", "TECNICO", "PECAS"}
+                blocos_para_escrever = []
 
-                for token in candidatos:
-                    if token.upper() in ignorar:
-                        continue
+                def visitor_body(text, cm, tm, font_dict, font_size):
+                    if not text:
+                        return
+                    t_bruto = str(text).strip()
+                    if not t_bruto:
+                        return
 
-                    chave_pdf = extrair_numeros_chaves(token)
-                    if len(chave_pdf) < 3:
-                        continue
+                    matrix = tm if tm is not None and len(matrix) >= 6 else cm
+                    x_pos = matrix[4] if matrix and len(matrix) >= 6 else 0
+                    y_pos = matrix[5] if matrix and len(matrix) >= 6 else 0
 
-                    if chave_pdf in mapa_sol:
-                        raw_sol = mapa_sol[chave_pdf]
-                        descricao = mapa_desc.get(chave_pdf, "SEM DESCRIÇÃO")
-                        cod_sol = f"SOL-{raw_sol}" if not raw_sol.startswith("SOL") else raw_sol
+                    # REGRA RIGOROSA DE TRAVA:
+                    # 1. Posição X restrita estritamente à coluna de código (X entre 35 e 95)
+                    # 2. Posição Y estritamente ABAIXO da linha de início da tabela (y_pos < y_inicio_tabela - 15)
+                    if 35 <= x_pos <= 95 and y_pos < (y_inicio_tabela - 15):
+                        
+                        cod_limpo = extrair_apenas_codigo_limpo(t_bruto)
 
-                        if chave_pdf not in codigos_processados:
-                            codigos_processados.add(chave_pdf)
-                            itens_encontrados.append({
-                                "status": "Convertido",
-                                "codigo_original": token,
-                                "codigo_sol": cod_sol,
-                                "descricao": descricao
-                            })
+                        # Evita capturar cabeçalhos de coluna
+                        if "CODIGO" in cod_limpo or "PECAS" in cod_limpo or len(cod_limpo) < 4:
+                            return
 
-                        # Localiza Y para desenhar a marcação no PDF
-                        y_pos_desenho = None
-                        for txt_vis, x_vis, y_vis in posicoes_texto:
-                            if token in txt_vis or chave_pdf in extrair_numeros_chaves(txt_vis):
-                                if y_vis < (page_height - 180): # Ignora cabecalho superior
-                                    y_pos_desenho = y_vis
-                                    break
+                        if cod_limpo in mapa_sol:
+                            raw_sol = mapa_sol[cod_limpo]
+                            descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
+                            cod_sol = f"SOL-{raw_sol}" if not raw_sol.startswith("SOL") else raw_sol
 
-                        if y_pos_desenho is not None:
-                            can.setFont("Helvetica-Bold", 7.5)
-                            can.setFillColor(colors.HexColor("#0284c7"))
-                            can.drawString(135, y_pos_desenho, cod_sol)
-                            escreveu_algo = True
+                            if cod_limpo not in codigos_processados:
+                                codigos_processados.add(cod_limpo)
+                                itens_encontrados.append({
+                                    "status": "Convertido",
+                                    "codigo_original": t_bruto,
+                                    "codigo_sol": cod_sol,
+                                    "descricao": descricao
+                                })
 
-                    elif chave_pdf not in codigos_processados and not token.isdigit():
-                        if "CNH" in token.upper() or len(token) >= 6:
-                            codigos_processados.add(chave_pdf)
+                            # Posição X = 92 desenha o SOL exatamente ao lado direito do código CNH
+                            blocos_para_escrever.append((92, y_pos, cod_sol))
+
+                        elif cod_limpo not in codigos_processados and not t_bruto.isdigit():
+                            codigos_processados.add(cod_limpo)
                             itens_encontrados.append({
                                 "status": "Não encontrado",
-                                "codigo_original": token,
+                                "codigo_original": t_bruto,
                                 "codigo_sol": "—",
                                 "descricao": "SEM DESCRIÇÃO"
                             })
+
+                page.extract_text(visitor_text=visitor_body)
+
+                # Escreve com tarja branca de fundo no texto para evitar sobreposição
+                if blocos_para_escrever:
+                    for x, y, texto_sol in blocos_para_escrever:
+                        # Fundo limpo
+                        can.setFillColor(colors.white)
+                        can.rect(x - 2, y - 1, 55, 8, fill=1, stroke=0)
+                        
+                        # Texto em Azul
+                        can.setFont("Helvetica-Bold", 6.5)
+                        can.setFillColor(colors.HexColor("#0284c7"))
+                        can.drawString(x, y, texto_sol)
+                        escreveu_algo = True
 
                 if escreveu_algo:
                     can.save()
