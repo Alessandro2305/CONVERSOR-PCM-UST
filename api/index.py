@@ -22,17 +22,10 @@ app.add_middleware(
 def limpar_codigo(codigo) -> str:
     if codigo is None:
         return ""
-    # Mantém apenas caracteres alfanuméricos em caixa alta
-    return re.sub(r'[^A-Z0-9]', '', str(codigo).strip().upper())
-
-def extrair_codigo_chave(texto) -> str:
-    if not texto:
-        return ""
-    # Pega o primeiro token da string (ex: de "CE32717 Bucha" pega "CE32717")
-    partes = str(texto).strip().split()
-    if partes:
-        return limpar_codigo(partes[0])
-    return ""
+    # Remove tudo que não for letra ou número e converte para maiúsculo
+    texto = re.sub(r'[^A-Z0-9]', '', str(codigo).strip().upper())
+    # Remove sufixo CNH para padronizar a comparação caso a planilha não tenha o CNH
+    return re.sub(r'CNH$', '', texto)
 
 @app.get("/")
 @app.get("/api")
@@ -48,41 +41,45 @@ async def escrever_no_pdf_original(
     excel_depara: UploadFile = File(...)
 ):
     try:
-        # 1. Carrega o Excel e FORÇA a seleção da ABA "C"
+        # 1. Leitura Inteligente da Planilha Excel
         excel_bytes = await excel_depara.read()
         wb = openpyxl.load_workbook(filename=io.BytesIO(excel_bytes), data_only=True)
         
-        # Procura explicitamente a aba chamada 'C' (maiúscula ou minúscula)
-        aba_alvo = None
-        for sheet_name in wb.sheetnames:
-            if sheet_name.strip().upper() == 'C':
-                aba_alvo = wb[sheet_name]
+        # Seleciona a aba 'C' ou a primeira aba ativa
+        sheet = None
+        for name in wb.sheetnames:
+            if name.strip().upper() == 'C':
+                sheet = wb[name]
                 break
-        
-        # Caso a aba não tenha o nome exato 'C', usa a primeira aba disponível
-        if aba_alvo is None:
-            aba_alvo = wb.active
+        if not sheet:
+            sheet = wb.active
 
         mapa_sol = {}
         mapa_desc = {}
 
-        # Mapeia a aba C: Coluna A = SOL (0) | Coluna B = Descrição (1) | Coluna C = Ref/John Deere (2)
-        for row in aba_alvo.iter_rows(min_row=2, values_only=True):
-            if not row or len(row) <= 2:
+        # Mapeia as linhas procurando o código de referência em qualquer coluna disponível
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            if not row or all(v is None for v in row):
                 continue
             
-            ref_val = row[2]
-            chave = limpar_codigo(ref_val)
+            # Tenta pegar SOL na Coluna A (idx 0) e Descrição na Coluna B (idx 1)
+            raw_sol = str(row[0] or '').replace(".0", "").strip()
+            raw_desc = str(row[1] or '').strip() if len(row) > 1 and row[1] else "SEM DESCRIÇÃO"
 
-            if chave and chave not in ["NONE", "NAN"]:
-                item_val = str(row[0] or '').strip()
-                if item_val and item_val.lower() not in ["none", "nan"]:
-                    if chave not in mapa_sol:
-                        mapa_sol[chave] = item_val.replace(".0", "").strip()
-                        if len(row) > 1 and row[1]:
-                            mapa_desc[chave] = str(row[1]).strip()
+            if not raw_sol or raw_sol.lower() in ["none", "nan"]:
+                continue
 
-        # 2. Processamento do PDF
+            # Varre as colunas C, D, B e A procurando a chave de referência de entrada
+            indices_busca = [2, 1, 0] + list(range(3, len(row)))
+            for idx in indices_busca:
+                if idx < len(row) and row[idx] is not None:
+                    chave = limpar_codigo(row[idx])
+                    if chave and len(chave) >= 3 and chave not in ["NONE", "NAN"]:
+                        if chave not in mapa_sol:
+                            mapa_sol[chave] = raw_sol
+                            mapa_desc[chave] = raw_desc
+
+        # 2. Processamento e Leitura do PDF
         pdf_bytes = await pdf_file.read()
         reader_base = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
@@ -108,15 +105,15 @@ async def escrever_no_pdf_original(
                     if not texto_bruto:
                         return
 
-                    matrix = tm if tm is not None and len(matrix := tm) >= 6 else cm
+                    matrix = tm if tm is not None and len(tm) >= 6 else cm
                     x_pos = matrix[4] if matrix and len(matrix) >= 6 else 0
                     y_pos = matrix[5] if matrix and len(matrix) >= 6 else 0
 
-                    # Isolamos a chave principal (ex: CE32717)
-                    cod_chave = extrair_codigo_chave(texto_bruto)
+                    # Limpa o texto vindo do PDF e remove o sufixo CNH se houver
+                    cod_chave = limpar_codigo(texto_bruto)
 
-                    # Somente processa itens localizados na coluna da esquerda do documento PDF (x < 180)
-                    if x_pos < 180 and len(cod_chave) >= 3 and "/" not in texto_bruto:
+                    # Aceita códigos alfanuméricos com pelo menos 3 dígitos e ignora cabeçalhos/datas
+                    if len(cod_chave) >= 3 and "/" not in texto_bruto and "CÓDIGO" not in texto_bruto.upper():
                         
                         if cod_chave in mapa_sol:
                             raw_sol = mapa_sol[cod_chave]
@@ -133,12 +130,12 @@ async def escrever_no_pdf_original(
                                 })
 
                             # Escreve a SOL ao lado no PDF
-                            can.setFont("Helvetica-Bold", 12)
+                            can.setFont("Helvetica-Bold", 8)
                             can.setFillColor(colors.HexColor("#1d4ed8"))
-                            can.drawString(x_pos + 70, y_pos, cod_sol)
+                            can.drawString(x_pos + 85, y_pos, cod_sol)
                             escreveu_algo = True
 
-                        elif cod_chave not in codigos_processados and not cod_chave.isdigit():
+                        elif cod_chave not in codigos_processados and x_pos < 220:
                             codigos_processados.add(cod_chave)
                             itens_encontrados.append({
                                 "status": "Não encontrado",
