@@ -22,9 +22,7 @@ app.add_middleware(
 def limpar_codigo(codigo) -> str:
     if codigo is None:
         return ""
-    # Remove tudo que não for letra ou número e converte para maiúsculo
     texto = re.sub(r'[^A-Z0-9]', '', str(codigo).strip().upper())
-    # Remove sufixo CNH para padronizar a comparação caso a planilha não tenha o CNH
     return re.sub(r'CNH$', '', texto)
 
 @app.get("/")
@@ -41,11 +39,10 @@ async def escrever_no_pdf_original(
     excel_depara: UploadFile = File(...)
 ):
     try:
-        # 1. Leitura Inteligente da Planilha Excel
+        # 1. Carrega a planilha e foca na aba 'C' (ou primeira disponível)
         excel_bytes = await excel_depara.read()
         wb = openpyxl.load_workbook(filename=io.BytesIO(excel_bytes), data_only=True)
         
-        # Seleciona a aba 'C' ou a primeira aba ativa
         sheet = None
         for name in wb.sheetnames:
             if name.strip().upper() == 'C':
@@ -57,19 +54,16 @@ async def escrever_no_pdf_original(
         mapa_sol = {}
         mapa_desc = {}
 
-        # Mapeia as linhas procurando o código de referência em qualquer coluna disponível
         for row in sheet.iter_rows(min_row=2, values_only=True):
             if not row or all(v is None for v in row):
                 continue
             
-            # Tenta pegar SOL na Coluna A (idx 0) e Descrição na Coluna B (idx 1)
             raw_sol = str(row[0] or '').replace(".0", "").strip()
             raw_desc = str(row[1] or '').strip() if len(row) > 1 and row[1] else "SEM DESCRIÇÃO"
 
             if not raw_sol or raw_sol.lower() in ["none", "nan"]:
                 continue
 
-            # Varre as colunas C, D, B e A procurando a chave de referência de entrada
             indices_busca = [2, 1, 0] + list(range(3, len(row)))
             for idx in indices_busca:
                 if idx < len(row) and row[idx] is not None:
@@ -79,7 +73,7 @@ async def escrever_no_pdf_original(
                             mapa_sol[chave] = raw_sol
                             mapa_desc[chave] = raw_desc
 
-        # 2. Processamento e Leitura do PDF
+        # 2. Processamento do PDF ignorando estritamente o Cabeçalho
         pdf_bytes = await pdf_file.read()
         reader_base = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
@@ -91,6 +85,28 @@ async def escrever_no_pdf_original(
             try:
                 page_width = float(page.mediabox.width)
                 page_height = float(page.mediabox.height)
+
+                # Identifica a posição Y exata da palavra "CÓDIGO" ou "PEÇAS" para limitar o topo
+                y_limite_cabecalho = 0
+
+                def buscar_limite_cabecalho(text, cm, tm, font_dict, font_size):
+                    nonlocal y_limite_cabecalho
+                    if not text:
+                        return
+                    texto = str(text).strip().upper()
+                    matrix = tm if tm is not None and len(tm) >= 6 else cm
+                    if matrix and len(matrix) >= 6:
+                        y = matrix[5]
+                        if "CÓDIGO" in texto or "CODIGO" in texto or "PEÇAS" in texto or "PECAS" in texto:
+                            if y_limite_cabecalho == 0 or y < y_limite_cabecalho:
+                                y_limite_cabecalho = y
+
+                # Primeira passagem rápida para mapear o fim do cabeçalho
+                page.extract_text(visitor_text=buscar_limite_cabecalho)
+
+                # Se não encontrar a palavra chave, define um limite seguro padrão (350)
+                if y_limite_cabecalho == 0:
+                    y_limite_cabecalho = 380
 
                 packet = io.BytesIO()
                 can = canvas.Canvas(packet, pagesize=(page_width, page_height))
@@ -105,16 +121,22 @@ async def escrever_no_pdf_original(
                     if not texto_bruto:
                         return
 
-                    matrix = tm if tm is not None and len(tm) >= 6 else cm
+                    matrix = tm if tm is not None and len(matrix) >= 6 else cm
                     x_pos = matrix[4] if matrix and len(matrix) >= 6 else 0
                     y_pos = matrix[5] if matrix and len(matrix) >= 6 else 0
 
-                    # Limpa o texto vindo do PDF e remove o sufixo CNH se houver
                     cod_chave = limpar_codigo(texto_bruto)
 
-                    # Aceita códigos alfanuméricos com pelo menos 3 dígitos e ignora cabeçalhos/datas
-                    if len(cod_chave) >= 3 and "/" not in texto_bruto and "CÓDIGO" not in texto_bruto.upper():
+                    # TRAVA RIGOROSA:
+                    # - Somente na coluna de códigos (x_pos entre 30 e 150)
+                    # - Somente ABAIXO do cabeçalho mapeado (y_pos < y_limite_cabecalho - 10)
+                    # - Ignora textos curtos ou puramente numéricos de 1 a 2 dígitos
+                    if 30 <= x_pos <= 150 and y_pos < (y_limite_cabecalho - 10) and len(cod_chave) >= 4:
                         
+                        # Evita capturar a própria palavra "CÓDIGO" ou linhas de títulos
+                        if "CODIGO" in cod_chave or "PECAS" in cod_chave:
+                            return
+
                         if cod_chave in mapa_sol:
                             raw_sol = mapa_sol[cod_chave]
                             descricao = mapa_desc.get(cod_chave, "SEM DESCRIÇÃO")
@@ -129,13 +151,13 @@ async def escrever_no_pdf_original(
                                     "descricao": descricao
                                 })
 
-                            # Escreve a SOL ao lado no PDF
-                            can.setFont("Helvetica-Bold", 8)
-                            can.setFillColor(colors.HexColor("#1d4ed8"))
-                            can.drawString(x_pos + 85, y_pos, cod_sol)
+                            # Escreve o código SOL na frente da coluna de códigos (X = 175)
+                            can.setFont("Helvetica-Bold", 7.5)
+                            can.setFillColor(colors.HexColor("#0284c7"))
+                            can.drawString(175, y_pos, cod_sol)
                             escreveu_algo = True
 
-                        elif cod_chave not in codigos_processados and x_pos < 220:
+                        elif cod_chave not in codigos_processados and not cod_chave.isdigit():
                             codigos_processados.add(cod_chave)
                             itens_encontrados.append({
                                 "status": "Não encontrado",
