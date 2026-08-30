@@ -10,22 +10,24 @@
 </head>
 
 <body>
+
+
     <div class="conteiner-lateral">
         <div class="lateral">
             <img src="img/logo.png" alt="Logo Usina Santa Terezinha" class="logo-img">
 
             <div class="caixa">
-                <button class="btn-caixa">
+                <button class="btn-caixa" data-aba="aba-conversor">
                     <i class="fa-solid fa-house"></i>
                     Painel Principal
                 </button>
 
-                <button class="btn-caixa active">
+                <button class="btn-caixa active" data-aba="aba-conversor">
                     <i class="fa-regular fa-file-lines"></i>
                     Conversor
                 </button>
 
-                <button class="btn-caixa">
+                <button class="btn-caixa" data-aba="aba-historico">
                     <i class="fa-regular fa-clock"></i>
                     Histórico
                 </button>
@@ -40,7 +42,7 @@
                     Configurações
                 </button>
 
-                <button class="btn-caixa">
+                <button class="btn-caixa" data-aba="aba-sobre">
                     <i class="fa-solid fa-circle-info"></i>
                     Sobre o Sistema
                 </button>
@@ -73,168 +75,274 @@
             </div>
         </header>
 
-        <!-- Stepper -->
-        <div class="container">
-            <div class="container-box">
-                <div class="box active">
-                    <label>1</label>
-                    <p>Selecionar Arquivos</p>
-                    <span></span>
-                </div>
-                <div class="box">
-                    <label>2</label>
-                    <p>Processar</p>
-                    <span></span>
-                </div>
-                <div class="box">
-                    <label>3</label>
-                    <p>Revisar Resultados</p>
-                    <span></span>
-                </div>
-                <div class="box">
-                    <label>4</label>
-                    <p>Exportar Excel</p>
+        <!-- ABA CONVERSOR (Conteúdo Principal Envolto Corretamente) -->
+        <div id="aba-conversor" class="aba-conteudo active">
+            <!-- Stepper -->
+            <div class="container">
+                <div class="container-box">
+                    <div class="box active">
+                        <label>1</label>
+                        <p>Selecionar Arquivos</p>
+                        <span></span>
+                    </div>
+                    <div class="box">
+                        <label>2</label>
+                        <p>Processar</p>
+                        <span></span>
+                    </div>
+                    <div class="box">
+                        <label>3</label>
+                        <p>Revisar Resultados</p>
+                        <span></span>
+                    </div>
+                    <div class="box">
+                        <label>4</label>
+                        <p>Exportar Excel</p>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Área de Upload de Arquivos -->
-        <div class="upload-container">
-            <div class="upload-caixa">
-                <div class="upload-info">
-                    <div class="upload-box blue">
+            <!-- Área de Upload de Arquivos -->
+            <div class="upload-container">
+                <div class="upload-caixa">
+                    <div class="upload-info">
+                        <div class="upload-box blue">
+                            <i class="fa-solid fa-file-lines"></i>
+                        </div>
+                        <div class="upload-box-info">
+                            <strong>PDF do Sistema</strong>
+                            <p>Selecione o arquivo PDF original</p>
+                        </div>
+                    </div>
+
+                    <div class="drop-card" onclick="document.getElementById('pdfInput').click()">
+                        <div class="drop-card-content">
+                            <i class="fa-solid fa-file-pdf icon-file pdf"></i>
+                            <div class="file-details">
+                                <span class="file-name" id="pdfName">Selecione o PDF...</span>
+                                <span class="file-size" id="pdfSize"></span>
+                            </div>
+                            <i class="fa-solid fa-circle-check icon-check" id="pdfCheck"></i>
+                        </div>
+                        <input type="file" id="pdfInput" accept=".pdf" style="display:none">
+                    </div>
+                </div>
+
+                <div class="upload-caixa">
+                    <div class="upload-info">
+                        <div class="upload-box green">
+                            <i class="fa-solid fa-table"></i>
+                        </div>
+                        <div class="upload-box-info">
+                            <strong>Planilha de Conversão</strong>
+                            <p>Selecione a planilha .xlsx de conversão</p>
+                        </div>
+                    </div>
+
+                    <div class="drop-card" onclick="document.getElementById('excelInput').click()">
+                        <div class="drop-card-content">
+                            <i class="fa-solid fa-file-excel icon-file excel"></i>
+                            <div class="file-details">
+                                <span class="file-name" id="excelName">Selecione a planilha...</span>
+                                <span class="file-size" id="excelSize"></span>
+                            </div>
+                            <i class="fa-solid fa-circle-check icon-check" id="excelCheck"></i>
+                        </div>
+                        <input type="file" id="excelInput" accept=".xlsx, .xls" style="display:none">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Painel de Métricas -->
+            <div class="metrics-container">
+                <div class="metric-card total">
+                    <div class="metric-icon blue">
                         <i class="fa-solid fa-file-lines"></i>
                     </div>
-                    <div class="upload-box-info">
-                        <strong>PDF do Sistema</strong>
-                        <p>Selecione o arquivo PDF original</p>
+                    <div class="metric-info">
+                        <h3 id="mTotal">0</h3>
+                        <strong>Total de Itens</strong>
+                        <p>Itens identificados no PDF</p>
                     </div>
                 </div>
 
-                <div class="drop-card" onclick="document.getElementById('pdfInput').click()">
-                    <div class="drop-card-content">
-                        <i class="fa-solid fa-file-pdf icon-file pdf"></i>
-                        <div class="file-details">
-                            <span class="file-name" id="pdfName">Selecione o PDF...</span>
-                            <span class="file-size" id="pdfSize"></span>
-                        </div>
-                        <i class="fa-solid fa-circle-check icon-check" id="pdfCheck"></i>
+                <div class="metric-card success">
+                    <div class="metric-icon green">
+                        <i class="fa-solid fa-circle-check"></i>
                     </div>
-                    <input type="file" id="pdfInput" accept=".pdf" style="display:none">
+                    <div class="metric-info">
+                        <h3 id="mConvertidos">0</h3>
+                        <strong>Convertidos</strong>
+                        <p>Códigos encontrados</p>
+                    </div>
+                </div>
+
+                <div class="metric-card warning">
+                    <div class="metric-icon yellow">
+                        <i class="fa-solid fa-clock"></i>
+                    </div>
+                    <div class="metric-info">
+                        <h3 id="mPendentes">0</h3>
+                        <strong>Pendentes</strong>
+                        <p>Requerem verificação</p>
+                    </div>
+                </div>
+
+                <div class="metric-card danger">
+                    <div class="metric-icon red">
+                        <i class="fa-solid fa-circle-xmark"></i>
+                    </div>
+                    <div class="metric-info">
+                        <h3 id="mNaoEncontrados">0</h3>
+                        <strong>Não encontrados</strong>
+                        <p>Sem correspondência</p>
+                    </div>
                 </div>
             </div>
 
-            <div class="upload-caixa">
-                <div class="upload-info">
-                    <div class="upload-box green">
-                        <i class="fa-solid fa-table"></i>
+            <!-- Barra de Progresso Redesenhada -->
+            <div id="progressContainer" class="progress-card" style="display: none;">
+                <div class="progress-header">
+                    <div class="progress-status">
+                        <span class="pulse-dot"></span>
+                        <span id="progressText">Cruzando dados e convertendo códigos SOL...</span>
                     </div>
-                    <div class="upload-box-info">
-                        <strong>Planilha de Conversão</strong>
-                        <p>Selecione a planilha .xlsx de conversão</p>
+                    <span id="progressPercent" class="progress-badge">0%</span>
+                </div>
+                <div class="progress-track">
+                    <div id="progressBar" class="progress-fill" style="width: 0%;">
+                        <div class="progress-shimmer"></div>
                     </div>
                 </div>
+            </div>
 
-                <div class="drop-card" onclick="document.getElementById('excelInput').click()">
-                    <div class="drop-card-content">
-                        <i class="fa-solid fa-file-excel icon-file excel"></i>
-                        <div class="file-details">
-                            <span class="file-name" id="excelName">Selecione a planilha...</span>
-                            <span class="file-size" id="excelSize"></span>
-                        </div>
-                        <i class="fa-solid fa-circle-check icon-check" id="excelCheck"></i>
-                    </div>
-                    <input type="file" id="excelInput" accept=".xlsx, .xls" style="display:none">
+            <!-- Barra de Ações -->
+            <div class="actions-btn">
+                <button class="btn btn-primary" id="btnProcessar">
+                    <i class="fa-solid fa-play"></i> PROCESSAR ARQUIVOS
+                </button>
+                <button class="btn btn-success" id="btnExportar">
+                    <i class="fa-solid fa-file-excel"></i> EXPORTAR RESULTADO
+                </button>
+                <button class="btn btn-lixo" id="btnLimpar">
+                    <i class="fa-solid fa-trash-can"></i> LIMPAR
+                </button>
+            </div>
+
+            <!-- Tabela de Exibição dos Dados -->
+            <div class="table-container">
+                <div class="table-header">
+                    <strong>Resultados do Processamento</strong>
+                    <span id="contadorItens">0 itens identificados</span>
+                </div>
+
+                <div class="tabela-scroll">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>STATUS</th>
+                                <th>CÓDIGO ORIGINAL</th>
+                                <th>CÓDIGO SOL (CONVERTIDO)</th>
+                                <th>DESCRIÇÃO DO ITEM</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabelaDados">
+                            <!-- Preenchido dinamicamente pelo JavaScript -->
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
 
-        <!-- Painel de Métricas (Dashboard Cards) -->
-        <div class="metrics-container">
-            <div class="metric-card total">
-                <div class="metric-icon blue">
-                    <i class="fa-solid fa-file-lines"></i>
-                </div>
-                <div class="metric-info">
-                    <h3 id="mTotal">0</h3>
-                    <strong>Total de Itens</strong>
-                    <p>Itens identificados no PDF</p>
-                </div>
-            </div>
-
-            <div class="metric-card success">
-                <div class="metric-icon green">
-                    <i class="fa-solid fa-circle-check"></i>
-                </div>
-                <div class="metric-info">
-                    <h3 id="mConvertidos">0</h3>
-                    <strong>Convertidos</strong>
-                    <p>Códigos encontrados</p>
-                </div>
-            </div>
-
-            <div class="metric-card warning">
-                <div class="metric-icon yellow">
-                    <i class="fa-solid fa-clock"></i>
-                </div>
-                <div class="metric-info">
-                    <h3 id="mPendentes">0</h3>
-                    <strong>Pendentes</strong>
-                    <p>Requerem verificação</p>
-                </div>
-            </div>
-
-            <div class="metric-card danger">
-                <div class="metric-icon red">
-                    <i class="fa-solid fa-circle-xmark"></i>
-                </div>
-                <div class="metric-info">
-                    <h3 id="mNaoEncontrados">0</h3>
-                    <strong>Não encontrados</strong>
-                    <p>Sem correspondência</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Barra de Ações -->
-        <div class="actions-btn">
-            <button class="btn btn-primary" id="btnProcessar">
-                <i class="fa-solid fa-play"></i> PROCESSAR ARQUIVOS
-            </button>
-            <button class="btn btn-success" id="btnExportar">
-                <i class="fa-solid fa-file-excel"></i> EXPORTAR RESULTADO
-            </button>
-            <button class="btn btn-lixo" id="btnLimpar">
-                <i class="fa-solid fa-trash-can"></i> LIMPAR
-            </button>
-        </div>
-
-       <!-- Tabela de Exibição dos Dados -->
-        <div class="table-container">
+        <!-- ABA HISTÓRICO -->
+        <div id="aba-historico" class="aba-conteudo" style="display: none;">
             <div class="table-header">
-                <strong>Resultados do Processamento</strong>
-                <span id="contadorItens">0 itens identificados</span>
+                <strong>Histórico de Execuções</strong>
+                <button id="btnLimparHistorico" class="btn btn-lixo" style="padding: 4px 10px; font-size: 11px;">
+                    <i class="fa-solid fa-trash-can"></i> Limpar Histórico
+                </button>
             </div>
-            
-            <!-- Div com scroll mantendo o cabeçalho fixo -->
-            <div class="tabela-scroll">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>STATUS</th>
-                            <th>CÓDIGO ORIGINAL</th>
-                            <th>CÓDIGO SOL (CONVERTIDO)</th>
-                            <th>DESCRIÇÃO DO ITEM</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tabelaDados">
-                        <!-- Preenchido dinamicamente pelo JavaScript -->
-                    </tbody>
-                </table>
+            <div class="metrics-container" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 20px;">
+                <div class="metric-card success">
+                    <div class="metric-icon green">
+                        <i class="fa-solid fa-check-double"></i>
+                    </div>
+                    <div class="metric-info">
+                        <h3 id="historicoTotalConvertidos">0</h3>
+                        <strong>Total Convertido</strong>
+                        <p>Soma total de conversões</p>
+                    </div>
+                </div>
+
+                <div class="metric-card total">
+                    <div class="metric-icon blue">
+                        <i class="fa-solid fa-stopwatch"></i>
+                    </div>
+                    <div class="metric-info">
+                        <h3 id="historicoTempoTotal">0 min</h3>
+                        <strong>Tempo Acumulado</strong>
+                        <p>Tempo total economizado em processamentos</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <div class="table-header">
+                    <strong>Histórico de Execuções</strong>
+                    <span>Lotes Processados</span>
+                </div>
+                <div class="tabela-scroll">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>DATA / HORA</th>
+                                <th>CONVERTIDOS</th>
+                                <th>TOTAL DO LOTE</th>
+                                <th>TEMPO DE EXECUÇÃO</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historicoTbody">
+                            <!-- Preenchido dinamicamente pelo JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
-        
+        <!-- ABA SOBRE O SISTEMA -->
+        <div id="aba-sobre" class="aba-conteudo" style="display: none;">
+            <div class="table-container" style="padding: 24px;">
+                <div class="table-header" style="margin-bottom: 20px;">
+                    <strong>Sobre o Sistema</strong>
+                    <span>Informações Gerais e Desenvolvimento</span>
+                </div>
+
+                <div
+                    style="display: flex; gap: 20px; align-items: center; background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
+                    <div class="upload-box blue"
+                        style="width: 60px; height: 60px; font-size: 24px; display: flex; align-items: center; justify-content: center; border-radius: 8px;">
+                        <i class="fa-solid fa-code"></i>
+                    </div>
+                    <div>
+                        <h3 style="margin: 0 0 4px 0; color: #1e293b; font-size: 1.1rem;">Desenvolvedor do Sistema</h3>
+                        <p style="margin: 0; color: #64748b; font-size: 0.95rem; font-weight: 600;">Alessandro Mançano
+                            de Oliveira</p>
+                    </div>
+                </div>
+
+                <div style="line-height: 1.6; color: #475569; font-size: 0.95rem;">
+                    <p style="margin-bottom: 12px;">
+                        <strong>Sistema de Conversão de PDF / Código Original x SOL</strong> desenvolvido exclusivamente
+                        para a <strong>Usina Santa Terezinha (PCM)</strong>.
+                    </p>
+                    <p style="margin-bottom: 0;">
+                        Esta ferramenta automatiza o cruzamento de dados de requisições de compra, realizando a
+                        conversão direta de códigos originais para a codificação interna SOL e otimizando a exportação
+                        operacional.
+                    </p>
+                </div>
+            </div>
+        </div>
 
         <h2 class="footer-title">© 2026 Software Soluções Integradas - PCM UST</h2>
     </div>

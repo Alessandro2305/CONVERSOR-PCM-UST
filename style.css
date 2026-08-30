@@ -86,14 +86,26 @@ body {
     line-height: 1.4;
 }
 
-/* Main Content */
+/* Main Content Structure */
 .caixa-geral {
     width: 100%;
-    gap: 18px;
+    gap: 20px;
     display: flex;
     flex-direction: column;
     padding: 25px 35px;
     overflow-y: auto;
+}
+
+/* Abas e Espaçamento dos Blocos */
+.aba-conteudo {
+    display: none;
+}
+
+.aba-conteudo.active {
+    display: flex !important;
+    flex-direction: column;
+    gap: 20px;
+    width: 100%;
 }
 
 header {
@@ -461,19 +473,17 @@ td {
 
 /* Container de Scroll da Tabela */
 .tabela-scroll {
-    max-height: 480px; /* Define a altura visível antes de rolar */
-    overflow-y: auto;  /* Ativa a barra de rolagem vertical */
+    max-height: 480px;
+    overflow-y: auto;
 }
 
-/* Fixa o cabeçalho no topo ao rolar os dados */
 .tabela-scroll table thead th {
     position: sticky;
     top: 0;
     z-index: 10;
-    background-color: #002b66; /* Ajuste para a cor de fundo do seu cabeçalho */
+    background-color: #002b66;
 }
 
-/* Personalização suave da barra de rolagem (Chrome, Edge, Safari) */
 .tabela-scroll::-webkit-scrollbar {
     width: 6px;
 }
@@ -489,4 +499,97 @@ td {
 
 .tabela-scroll::-webkit-scrollbar-thumb:hover {
     background-color: #94a3b8;
+}
+
+/* Progress Bar Container */
+.progress-card {
+    width: 100%;
+    background: #ffffff;
+    padding: 18px 22px;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.08);
+    border: 1px solid #e2e8f0;
+}
+
+.progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.progress-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.pulse-dot {
+    width: 9px;
+    height: 9px;
+    background-color: #2563eb;
+    border-radius: 50%;
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7);
+    animation: pulse 1.6s infinite cubic-bezier(0.66, 0, 0, 1);
+}
+
+@keyframes pulse {
+    to {
+        box-shadow: 0 0 0 8px rgba(37, 99, 235, 0);
+    }
+}
+
+.progress-badge {
+    background-color: #eff6ff;
+    color: #1d4ed8;
+    font-size: 0.85rem;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid #bfdbfe;
+}
+
+.progress-track {
+    width: 100%;
+    height: 12px;
+    background-color: #f1f5f9;
+    border-radius: 100px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #1d4ed8 0%, #3b82f6 50%, #2563eb 100%);
+    border-radius: 100px;
+    transition: width 0.35s ease-in-out;
+    position: relative;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+}
+
+.progress-shimmer {
+    position: absolute;
+    top: 0; left: 0; bottom: 0; right: 0;
+    background-image: linear-gradient(
+        -45deg,
+        rgba(255, 255, 255, 0.25) 25%,
+        transparent 25%,
+        transparent 50%,
+        rgba(255, 255, 255, 0.25) 50%,
+        rgba(255, 255, 255, 0.25) 75%,
+        transparent 75%,
+        transparent
+    );
+    background-size: 30px 30px;
+    animation: move-stripes 1.2s linear infinite;
+}
+
+@keyframes move-stripes {
+    0% { background-position: 0 0; }
+    100% { background-position: 30px 0; }
 }
