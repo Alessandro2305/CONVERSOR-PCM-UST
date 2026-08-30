@@ -22,13 +22,13 @@ app.add_middleware(
 def limpar_codigo(codigo) -> str:
     if codigo is None:
         return ""
-    # Remove apenas caracteres especiais/espaços, MANTENDO letras (ex: 'CE') e números intactos
+    # Remove apenas caracteres especiais e espaços, MANTENDO letras e números intactos
     return re.sub(r'[^A-Z0-9]', '', str(codigo).strip().upper())
 
 @app.get("/")
 @app.get("/api")
 def root():
-    return {"status": "ok", "message": "API Conversor PCM UST - Leitura Estrita Coluna C"}
+    return {"status": "ok", "message": "API Conversor PCM UST Ativa"}
 
 @app.post("/escrever-no-pdf-original/")
 @app.post("/escrever-no-pdf-original")
@@ -39,7 +39,7 @@ async def escrever_no_pdf_original(
     excel_depara: UploadFile = File(...)
 ):
     try:
-        # 1. Leitura da Planilha focado EXCLUSIVAMENTE na Coluna C (Índice 2)
+        # 1. Leitura do Excel - Foco total na Coluna C (Índice 2)
         excel_bytes = await excel_depara.read()
         wb = openpyxl.load_workbook(filename=io.BytesIO(excel_bytes), data_only=True)
         sheet = wb.active
@@ -48,7 +48,6 @@ async def escrever_no_pdf_original(
         mapa_desc = {}
 
         for row in sheet.iter_rows(min_row=2, values_only=True):
-            # Garante que a linha tenha ao menos a Coluna C (índice 2)
             if not row or len(row) <= 2:
                 continue
             
@@ -56,16 +55,15 @@ async def escrever_no_pdf_original(
             ref_val = row[2]
             chave = limpar_codigo(ref_val)
 
-            if chave and chave != "NONE" and chave != "NAN":
+            if chave and chave not in ["NONE", "NAN"]:
                 item_val = str(row[0] or '').strip()
-                if item_val and item_val.lower() != "none" and item_val.lower() != "nan":
-                    # Salva apenas a primeira referência encontrada para evitar sobreshadowing
+                if item_val and item_val.lower() not in ["none", "nan"]:
                     if chave not in mapa_sol:
                         mapa_sol[chave] = item_val.replace(".0", "").strip()
                         if len(row) > 1 and row[1]:
                             mapa_desc[chave] = str(row[1]).strip()
 
-        # 2. Processamento do PDF Otimizado
+        # 2. Processamento do PDF
         pdf_bytes = await pdf_file.read()
         reader_base = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
@@ -75,14 +73,6 @@ async def escrever_no_pdf_original(
 
         for page in reader_base.pages:
             try:
-                texto_pagina = page.extract_text() or ""
-                texto_pagina_limpo = limpar_codigo(texto_pagina)
-
-                # Otimização: Só processa a página se tiver alguma das chaves da Coluna C nela
-                if not any(cod in texto_pagina_limpo for cod in mapa_sol.keys()) and "CE" not in texto_pagina.upper():
-                    writer.add_page(page)
-                    continue
-
                 page_width = float(page.mediabox.width)
                 page_height = float(page.mediabox.height)
 
@@ -97,11 +87,13 @@ async def escrever_no_pdf_original(
 
                     texto_limpo = str(text).strip()
                     cod_limpo = limpar_codigo(texto_limpo)
-                    x_pos = cm[4]
-                    y_pos = cm[5]
+                    x_pos = tm[4]
+                    y_pos = tm[5]
 
-                    # Filtra apenas a coluna de códigos principais (esquerda) no PDF
-                    if x_pos < 180 and "/" not in texto_limpo and len(cod_limpo) >= 3:
+                    # Filtra apenas textos que tenham cara de código (mínimo 3 caracteres) e não sejam datas/caminhos
+                    if len(cod_limpo) >= 3 and "/" not in texto_limpo:
+                        
+                        # Garante processamento único
                         if cod_limpo in mapa_sol:
                             raw_sol = mapa_sol[cod_limpo]
                             descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
@@ -116,19 +108,21 @@ async def escrever_no_pdf_original(
                                     "descricao": descricao
                                 })
 
-                            can.setFont("Helvetica-Bold", 8)
-                            can.setFillColor(colors.HexColor("#2563eb"))
-                            can.drawString(x_pos + 60, y_pos, cod_sol)
+                            # Escreve o código SOL ao lado no PDF
+                            can.setFont("Helvetica-Bold", 9)
+                            can.setFillColor(colors.HexColor("#1d4ed8"))
+                            can.drawString(x_pos + 65, y_pos, cod_sol)
                             escreveu_algo = True
-                        else:
-                            if cod_limpo and cod_limpo not in codigos_processados:
-                                codigos_processados.add(cod_limpo)
-                                itens_encontrados.append({
-                                    "status": "Não encontrado",
-                                    "codigo_original": texto_limpo,
-                                    "codigo_sol": "—",
-                                    "descricao": "SEM DESCRIÇÃO"
-                                })
+
+                        elif x_pos < 180 and cod_limpo not in codigos_processados:
+                            # Registra apenas códigos da coluna da esquerda que não converteram
+                            codigos_processados.add(cod_limpo)
+                            itens_encontrados.append({
+                                "status": "Não encontrado",
+                                "codigo_original": texto_limpo,
+                                "codigo_sol": "—",
+                                "descricao": "SEM DESCRIÇÃO"
+                            })
 
                 page.extract_text(visitor_text=visitor_body)
 
