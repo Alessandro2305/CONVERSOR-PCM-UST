@@ -42,7 +42,7 @@ async def escrever_no_pdf_original(
     excel_depara: UploadFile = File(...)
 ):
     try:
-        # 1. Leitura Completa do Excel
+        # 1. Leitura Completa da Planilha Excel
         excel_bytes = await excel_depara.read()
         wb = openpyxl.load_workbook(filename=io.BytesIO(excel_bytes), data_only=True)
 
@@ -72,7 +72,7 @@ async def escrever_no_pdf_original(
                             mapa_sol[chave_limpa] = raw_sol
                             mapa_desc[chave_limpa] = raw_desc
 
-        # 2. Leitura e Inserção Precisa no PDF
+        # 2. Leitura e Inserção no PDF
         pdf_bytes = await pdf_file.read()
         reader_base = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
@@ -84,28 +84,6 @@ async def escrever_no_pdf_original(
             try:
                 page_width = float(page.mediabox.width)
                 page_height = float(page.mediabox.height)
-
-                # Mapeia dinamicamente o Y da linha do título "PEÇAS, COMPONENTES"
-                y_inicio_tabela = 0
-
-                def MapearCabecalho(text, cm, tm, font_dict, font_size):
-                    nonlocal y_inicio_tabela
-                    if not text:
-                        return
-                    t = str(text).upper()
-                    if "PECAS" in t or "LUBRIFICANTES" in t or "CÓDIGO" in t or "CODIGO" in t:
-                        matrix = tm if tm is not None and len(tm) >= 6 else cm
-                        if matrix and len(matrix) >= 6:
-                            y = matrix[5]
-                            if y_inicio_tabela == 0 or y < y_inicio_tabela:
-                                y_inicio_tabela = y
-
-                # Passagem 1: Encontra a altura Y exata de onde começa a tabela
-                page.extract_text(visitor_text=MapearCabecalho)
-
-                # Se não achou a palavra-chave, usa como piso padrão os 45% inferiores da folha
-                if y_inicio_tabela == 0:
-                    y_inicio_tabela = page_height * 0.55
 
                 packet = io.BytesIO()
                 can = canvas.Canvas(packet, pagesize=(page_width, page_height))
@@ -120,58 +98,61 @@ async def escrever_no_pdf_original(
                     if not t_bruto:
                         return
 
-                    matrix = tm if tm is not None and len(matrix) >= 6 else cm
+                    matrix = tm if tm is not None and len(tm) >= 6 else cm
                     x_pos = matrix[4] if matrix and len(matrix) >= 6 else 0
                     y_pos = matrix[5] if matrix and len(matrix) >= 6 else 0
 
-                    # REGRA RIGOROSA DE TRAVA:
-                    # 1. Posição X restrita estritamente à coluna de código (X entre 35 e 95)
-                    # 2. Posição Y estritamente ABAIXO da linha de início da tabela (y_pos < y_inicio_tabela - 15)
-                    if 35 <= x_pos <= 95 and y_pos < (y_inicio_tabela - 15):
+                    # CRITÉRIO DE SEGURANÇA:
+                    # - Somente na coluna CÓDIGO (X de 20 a 140)
+                    # - Somente abaixo dos cabeçalhos superiores (Y < page_height - 350)
+                    if 20 <= x_pos <= 140 and y_pos < (page_height - 350):
                         
-                        cod_limpo = extrair_apenas_codigo_limpo(t_bruto)
-
-                        # Evita capturar cabeçalhos de coluna
-                        if "CODIGO" in cod_limpo or "PECAS" in cod_limpo or len(cod_limpo) < 4:
+                        # Filtra palavras do cabeçalho da tabela
+                        if "CODIGO" in t_bruto.upper() or "PECAS" in t_bruto.upper() or "ITEM" in t_bruto.upper():
                             return
 
-                        if cod_limpo in mapa_sol:
-                            raw_sol = mapa_sol[cod_limpo]
-                            descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
-                            cod_sol = f"SOL-{raw_sol}" if not raw_sol.startswith("SOL") else raw_sol
+                        cod_limpo = extrair_apenas_codigo_limpo(t_bruto)
 
-                            if cod_limpo not in codigos_processados:
+                        # Valida se é um código com sufixo CNH ou numérico longo (peça real)
+                        if len(cod_limpo) >= 4 and ("CNH" in t_bruto.upper() or re.search(r'\d{5,}', cod_limpo)):
+                            
+                            if cod_limpo in mapa_sol:
+                                raw_sol = mapa_sol[cod_limpo]
+                                descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
+                                cod_sol = f"SOL-{raw_sol}" if not raw_sol.startswith("SOL") else raw_sol
+
+                                if cod_limpo not in codigos_processados:
+                                    codigos_processados.add(cod_limpo)
+                                    itens_encontrados.append({
+                                        "status": "Convertido",
+                                        "codigo_original": t_bruto,
+                                        "codigo_sol": cod_sol,
+                                        "descricao": descricao
+                                    })
+
+                                # Escreve o SOL na posição X=145 (início da coluna de descrição), sem cobrir o código original
+                                blocos_para_escrever.append((145, y_pos, cod_sol))
+
+                            elif cod_limpo not in codigos_processados:
                                 codigos_processados.add(cod_limpo)
                                 itens_encontrados.append({
-                                    "status": "Convertido",
+                                    "status": "Não encontrado",
                                     "codigo_original": t_bruto,
-                                    "codigo_sol": cod_sol,
-                                    "descricao": descricao
+                                    "codigo_sol": "—",
+                                    "descricao": "SEM DESCRIÇÃO"
                                 })
-
-                            # Posição X = 92 desenha o SOL exatamente ao lado direito do código CNH
-                            blocos_para_escrever.append((92, y_pos, cod_sol))
-
-                        elif cod_limpo not in codigos_processados and not t_bruto.isdigit():
-                            codigos_processados.add(cod_limpo)
-                            itens_encontrados.append({
-                                "status": "Não encontrado",
-                                "codigo_original": t_bruto,
-                                "codigo_sol": "—",
-                                "descricao": "SEM DESCRIÇÃO"
-                            })
 
                 page.extract_text(visitor_text=visitor_body)
 
-                # Escreve com tarja branca de fundo no texto para evitar sobreposição
+                # Escreve os códigos SOL no overlay
                 if blocos_para_escrever:
                     for x, y, texto_sol in blocos_para_escrever:
-                        # Fundo limpo
+                        # Fundo branco para garantir leitura sem sobreposição
                         can.setFillColor(colors.white)
-                        can.rect(x - 2, y - 1, 55, 8, fill=1, stroke=0)
+                        can.rect(x - 2, y - 1, 60, 9, fill=1, stroke=0)
                         
-                        # Texto em Azul
-                        can.setFont("Helvetica-Bold", 6.5)
+                        # Texto em destaque azul
+                        can.setFont("Helvetica-Bold", 7.0)
                         can.setFillColor(colors.HexColor("#0284c7"))
                         can.drawString(x, y, texto_sol)
                         escreveu_algo = True
