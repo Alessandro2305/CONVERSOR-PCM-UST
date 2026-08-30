@@ -22,8 +22,17 @@ app.add_middleware(
 def limpar_codigo(codigo) -> str:
     if codigo is None:
         return ""
-    # Normaliza removendo espaços e caracteres especiais, preservando letras e números (ex: CE32024)
+    # Mantém apenas caracteres alfanuméricos em caixa alta
     return re.sub(r'[^A-Z0-9]', '', str(codigo).strip().upper())
+
+def extrair_codigo_chave(texto) -> str:
+    if not texto:
+        return ""
+    # Pega o primeiro token da string (ex: de "CE32717 Bucha" pega "CE32717")
+    partes = str(texto).strip().split()
+    if partes:
+        return limpar_codigo(partes[0])
+    return ""
 
 @app.get("/")
 @app.get("/api")
@@ -39,19 +48,29 @@ async def escrever_no_pdf_original(
     excel_depara: UploadFile = File(...)
 ):
     try:
-        # 1. Carrega e Mapeia a Coluna C da Planilha
+        # 1. Carrega o Excel e FORÇA a seleção da ABA "C"
         excel_bytes = await excel_depara.read()
         wb = openpyxl.load_workbook(filename=io.BytesIO(excel_bytes), data_only=True)
-        sheet = wb.active
+        
+        # Procura explicitamente a aba chamada 'C' (maiúscula ou minúscula)
+        aba_alvo = None
+        for sheet_name in wb.sheetnames:
+            if sheet_name.strip().upper() == 'C':
+                aba_alvo = wb[sheet_name]
+                break
+        
+        # Caso a aba não tenha o nome exato 'C', usa a primeira aba disponível
+        if aba_alvo is None:
+            aba_alvo = wb.active
 
         mapa_sol = {}
         mapa_desc = {}
 
-        for row in sheet.iter_rows(min_row=2, values_only=True):
+        # Mapeia a aba C: Coluna A = SOL (0) | Coluna B = Descrição (1) | Coluna C = Ref/John Deere (2)
+        for row in aba_alvo.iter_rows(min_row=2, values_only=True):
             if not row or len(row) <= 2:
                 continue
             
-            # Coluna A = SOL (0) | Coluna B = Descrição (1) | Coluna C = Ref/John Deere (2)
             ref_val = row[2]
             chave = limpar_codigo(ref_val)
 
@@ -63,7 +82,7 @@ async def escrever_no_pdf_original(
                         if len(row) > 1 and row[1]:
                             mapa_desc[chave] = str(row[1]).strip()
 
-        # 2. Varredura do PDF
+        # 2. Processamento do PDF
         pdf_bytes = await pdf_file.read()
         reader_base = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
@@ -89,38 +108,38 @@ async def escrever_no_pdf_original(
                     if not texto_bruto:
                         return
 
-                    # Garante extração correta de coordenadas independente de variação de parâmetros
-                    matrix = tm if tm is not None and len(tm) >= 6 else cm
+                    matrix = tm if tm is not None and len(matrix := tm) >= 6 else cm
                     x_pos = matrix[4] if matrix and len(matrix) >= 6 else 0
                     y_pos = matrix[5] if matrix and len(matrix) >= 6 else 0
 
-                    cod_limpo = limpar_codigo(texto_bruto)
+                    # Isolamos a chave principal (ex: CE32717)
+                    cod_chave = extrair_codigo_chave(texto_bruto)
 
-                    # Se encontrar o código exato mapeado da Coluna C no PDF
-                    if cod_limpo in mapa_sol:
-                        raw_sol = mapa_sol[cod_limpo]
-                        descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
-                        cod_sol = f"SOL-{raw_sol}" if not raw_sol.startswith("SOL") else raw_sol
+                    # Somente processa itens localizados na coluna da esquerda do documento PDF (x < 180)
+                    if x_pos < 180 and len(cod_chave) >= 3 and "/" not in texto_bruto:
+                        
+                        if cod_chave in mapa_sol:
+                            raw_sol = mapa_sol[cod_chave]
+                            descricao = mapa_desc.get(cod_chave, "SEM DESCRIÇÃO")
+                            cod_sol = f"SOL-{raw_sol}" if not raw_sol.startswith("SOL") else raw_sol
 
-                        if cod_limpo not in codigos_processados:
-                            codigos_processados.add(cod_limpo)
-                            itens_encontrados.append({
-                                "status": "Convertido",
-                                "codigo_original": texto_bruto,
-                                "codigo_sol": cod_sol,
-                                "descricao": descricao
-                            })
+                            if cod_chave not in codigos_processados:
+                                codigos_processados.add(cod_chave)
+                                itens_encontrados.append({
+                                    "status": "Convertido",
+                                    "codigo_original": texto_bruto,
+                                    "codigo_sol": cod_sol,
+                                    "descricao": descricao
+                                })
 
-                        # Escreve o código SOL no PDF
-                        can.setFont("Helvetica-Bold", 8)
-                        can.setFillColor(colors.HexColor("#1d4ed8"))
-                        can.drawString(x_pos + 60, y_pos, cod_sol)
-                        escreveu_algo = True
+                            # Escreve a SOL ao lado no PDF
+                            can.setFont("Helvetica-Bold", 12)
+                            can.setFillColor(colors.HexColor("#1d4ed8"))
+                            can.drawString(x_pos + 70, y_pos, cod_sol)
+                            escreveu_algo = True
 
-                    # Captura códigos da coluna principal (esquerda) que não têm conversão
-                    elif x_pos < 180 and len(cod_limpo) >= 4 and "/" not in texto_bruto:
-                        if cod_limpo not in codigos_processados and not cod_limpo.isdigit():
-                            codigos_processados.add(cod_limpo)
+                        elif cod_chave not in codigos_processados and not cod_chave.isdigit():
+                            codigos_processados.add(cod_chave)
                             itens_encontrados.append({
                                 "status": "Não encontrado",
                                 "codigo_original": texto_bruto,
