@@ -22,7 +22,9 @@ app.add_middleware(
 def limpar_codigo(codigo) -> str:
     if codigo is None:
         return ""
+    # Remove qualquer caractere que não seja letra ou número e converte para maiúsculo
     texto = re.sub(r'[^A-Z0-9]', '', str(codigo).strip().upper())
+    # Normaliza tirando o sufixo CNH caso exista (ex: 84561324CNH -> 84561324)
     return re.sub(r'CNH$', '', texto)
 
 @app.get("/")
@@ -39,41 +41,42 @@ async def escrever_no_pdf_original(
     excel_depara: UploadFile = File(...)
 ):
     try:
-        # 1. Carrega o Excel focando na Aba 'C'
+        # 1. Leitura Completa de Todas as Abas do Excel para Mapeamento Global
         excel_bytes = await excel_depara.read()
         wb = openpyxl.load_workbook(filename=io.BytesIO(excel_bytes), data_only=True)
-        
-        sheet = None
-        for name in wb.sheetnames:
-            if name.strip().upper() == 'C':
-                sheet = wb[name]
-                break
-        if not sheet:
-            sheet = wb.active
 
         mapa_sol = {}
         mapa_desc = {}
 
-        for row in sheet.iter_rows(min_row=2, values_only=True):
-            if not row or all(v is None for v in row):
-                continue
-            
-            raw_sol = str(row[0] or '').replace(".0", "").strip()
-            raw_desc = str(row[1] or '').strip() if len(row) > 1 and row[1] else "SEM DESCRIÇÃO"
+        # Prioriza aba chamada 'C', 'CNH' ou percorre todas
+        abas_para_ler = []
+        for name in wb.sheetnames:
+            if name.strip().upper() in ['C', 'CNH', 'CASE', 'DEPARA', 'DE-PARA']:
+                abas_para_ler.insert(0, wb[name])
+            else:
+                abas_para_ler.append(wb[name])
 
-            if not raw_sol or raw_sol.lower() in ["none", "nan"]:
-                continue
+        for sheet in abas_para_ler:
+            for row in sheet.iter_rows(min_row=2, values_only=True):
+                if not row or all(v is None for v in row):
+                    continue
 
-            indices_busca = [2, 1, 0] + list(range(3, len(row)))
-            for idx in indices_busca:
-                if idx < len(row) and row[idx] is not None:
-                    chave = limpar_codigo(row[idx])
-                    if chave and len(chave) >= 3 and chave not in ["NONE", "NAN"]:
-                        if chave not in mapa_sol:
-                            mapa_sol[chave] = raw_sol
-                            mapa_desc[chave] = raw_desc
+                raw_sol = str(row[0] or '').replace(".0", "").strip()
+                raw_desc = str(row[1] or '').strip() if len(row) > 1 and row[1] else "SEM DESCRIÇÃO"
 
-        # 2. Processamento do PDF por Posição Estruturada
+                if not raw_sol or raw_sol.lower() in ["none", "nan"]:
+                    continue
+
+                # Percorre as colunas procurando a chave original do item
+                for idx in range(len(row)):
+                    if row[idx] is not None:
+                        chave = limpar_codigo(row[idx])
+                        if chave and len(chave) >= 3 and chave not in ["NONE", "NAN"]:
+                            if chave not in mapa_sol:
+                                mapa_sol[chave] = raw_sol
+                                mapa_desc[chave] = raw_desc
+
+        # 2. Processamento de Leitura e Escrita do PDF
         pdf_bytes = await pdf_file.read()
         reader_base = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
@@ -90,10 +93,8 @@ async def escrever_no_pdf_original(
                 can = canvas.Canvas(packet, pagesize=(page_width, page_height))
                 escreveu_algo = False
 
-                # Posições capturadas com validação de coluna
-                blocos_para_escrever = []
-
                 def visitor_body(text, cm, tm, font_dict, font_size):
+                    nonlocal escreveu_algo
                     if not text:
                         return
 
@@ -107,11 +108,13 @@ async def escrever_no_pdf_original(
 
                     cod_chave = limpar_codigo(texto_bruto)
 
-                    # FILTRO RÍGIDO:
-                    # - Apenas dentro da coluna de códigos (X entre 35 e 140)
-                    # - Apenas abaixo de Y < 400 (ignora completamente o cabeçalho)
-                    if 35 <= x_pos <= 140 and y_pos < 400 and len(cod_chave) >= 4:
-                        if "CODIGO" in cod_chave or "PECAS" in cod_chave or "ORCAMENTO" in cod_chave:
+                    # REGRAS DE FILTRO AJUSTADAS PARA O DOCUMENTO DA AGRICASE:
+                    # - Posição X da coluna do Código: entre 30 e 130
+                    # - Posição Y da Tabela de Peças: abaixo do cabeçalho da OS (y_pos < height - 200)
+                    if 30 <= x_pos <= 130 and y_pos < (page_height - 200) and len(cod_chave) >= 4:
+                        
+                        # Descarta títulos e cabeçalhos
+                        if "CODIGO" in cod_chave or "PECAS" in cod_chave or "DESCRICAO" in cod_chave:
                             return
 
                         if cod_chave in mapa_sol:
@@ -128,7 +131,11 @@ async def escrever_no_pdf_original(
                                     "descricao": descricao
                                 })
 
-                            blocos_para_escrever.append((160, y_pos, cod_sol))
+                            # Escreve a SOL logo à frente da coluna CÓDIGO (em X = 135)
+                            can.setFont("Helvetica-Bold", 7.5)
+                            can.setFillColor(colors.HexColor("#0284c7")) # Azul destaque
+                            can.drawString(135, y_pos, cod_sol)
+                            escreveu_algo = True
 
                         elif cod_chave not in codigos_processados and not cod_chave.isdigit():
                             codigos_processados.add(cod_chave)
@@ -141,13 +148,7 @@ async def escrever_no_pdf_original(
 
                 page.extract_text(visitor_text=visitor_body)
 
-                # Escreve as marcações de forma isolada
-                if blocos_para_escrever:
-                    can.setFont("Helvetica-Bold", 7.5)
-                    can.setFillColor(colors.HexColor("#0284c7"))
-                    for x, y, texto in blocos_para_escrever:
-                        can.drawString(x, y, texto)
-                    
+                if escreveu_algo:
                     can.save()
                     packet.seek(0)
                     overlay_pdf = PdfReader(packet)
