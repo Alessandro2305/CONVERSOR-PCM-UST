@@ -22,49 +22,50 @@ app.add_middleware(
 def limpar_codigo(codigo) -> str:
     if codigo is None:
         return ""
-    return re.sub(r'\D', '', str(codigo)).strip()
+    # Remove apenas caracteres especiais/espaços, MANTENDO letras (ex: 'CE') e números intactos
+    return re.sub(r'[^A-Z0-9]', '', str(codigo).strip().upper())
+
+@app.get("/")
+@app.get("/api")
+def root():
+    return {"status": "ok", "message": "API Conversor PCM UST - Leitura Estrita Coluna C"}
 
 @app.post("/escrever-no-pdf-original/")
 @app.post("/escrever-no-pdf-original")
+@app.post("/api/escrever-no-pdf-original/")
+@app.post("/api/escrever-no-pdf-original")
 async def escrever_no_pdf_original(
     pdf_file: UploadFile = File(...),
     excel_depara: UploadFile = File(...)
 ):
     try:
-        # 1. Leitura do Excel com openpyxl (Ultra rápida)
+        # 1. Leitura da Planilha focado EXCLUSIVAMENTE na Coluna C (Índice 2)
         excel_bytes = await excel_depara.read()
         wb = openpyxl.load_workbook(filename=io.BytesIO(excel_bytes), data_only=True)
         sheet = wb.active
-
-        header = [str(cell.value or '').upper().strip() for cell in sheet[1]]
-        idx_ref = next((i for i, h in enumerate(header) if "REF" in h), None)
-        idx_item = next((i for i, h in enumerate(header) if any(k in h for k in ["ITEM", "CÓDIGO", "CODIGO"])), None)
-        idx_desc = next((i for i, h in enumerate(header) if "DESC" in h), None)
-
-        if idx_ref is None or idx_item is None:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Colunas obrigatórias não encontradas no Excel. Colunas lidas: {header}"
-            )
 
         mapa_sol = {}
         mapa_desc = {}
 
         for row in sheet.iter_rows(min_row=2, values_only=True):
-            if not row or len(row) <= max(idx_ref, idx_item):
+            # Garante que a linha tenha ao menos a Coluna C (índice 2)
+            if not row or len(row) <= 2:
                 continue
             
-            ref_val = row[idx_ref]
+            # Coluna A (idx 0) = SOL | Coluna B (idx 1) = Descrição | Coluna C (idx 2) = Código Referência (ex: CE32024)
+            ref_val = row[2]
             chave = limpar_codigo(ref_val)
 
-            if chave:
-                item_val = str(row[idx_item] or '').strip()
-                if item_val and item_val.lower() != "none":
-                    mapa_sol[chave] = item_val.replace(".0", "").replace(".", "").strip()
-                if idx_desc is not None and len(row) > idx_desc and row[idx_desc]:
-                    mapa_desc[chave] = str(row[idx_desc]).strip()
+            if chave and chave != "NONE" and chave != "NAN":
+                item_val = str(row[0] or '').strip()
+                if item_val and item_val.lower() != "none" and item_val.lower() != "nan":
+                    # Salva apenas a primeira referência encontrada para evitar sobreshadowing
+                    if chave not in mapa_sol:
+                        mapa_sol[chave] = item_val.replace(".0", "").strip()
+                        if len(row) > 1 and row[1]:
+                            mapa_desc[chave] = str(row[1]).strip()
 
-        # 2. Processamento do PDF Ultra Otimizado
+        # 2. Processamento do PDF Otimizado
         pdf_bytes = await pdf_file.read()
         reader_base = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
@@ -74,9 +75,11 @@ async def escrever_no_pdf_original(
 
         for page in reader_base.pages:
             try:
-                # Otimização: Se a página não tiver nenhum texto simples, pula a varredura complexa
                 texto_pagina = page.extract_text() or ""
-                if not any(cod in texto_pagina for cod in mapa_sol.keys()) and "CNH" not in texto_pagina.upper():
+                texto_pagina_limpo = limpar_codigo(texto_pagina)
+
+                # Otimização: Só processa a página se tiver alguma das chaves da Coluna C nela
+                if not any(cod in texto_pagina_limpo for cod in mapa_sol.keys()) and "CE" not in texto_pagina.upper():
                     writer.add_page(page)
                     continue
 
@@ -97,9 +100,8 @@ async def escrever_no_pdf_original(
                     x_pos = cm[4]
                     y_pos = cm[5]
 
-                    eh_codigo_peca = (texto_limpo.upper().endswith("CNH") or cod_limpo in mapa_sol)
-
-                    if x_pos < 140 and "/" not in texto_limpo and eh_codigo_peca:
+                    # Filtra apenas a coluna de códigos principais (esquerda) no PDF
+                    if x_pos < 180 and "/" not in texto_limpo and len(cod_limpo) >= 3:
                         if cod_limpo in mapa_sol:
                             raw_sol = mapa_sol[cod_limpo]
                             descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
@@ -114,9 +116,9 @@ async def escrever_no_pdf_original(
                                     "descricao": descricao
                                 })
 
-                            can.setFont("Helvetica-Bold", 6)
+                            can.setFont("Helvetica-Bold", 8)
                             can.setFillColor(colors.HexColor("#2563eb"))
-                            can.drawString(x_pos + 55, y_pos, cod_sol)
+                            can.drawString(x_pos + 60, y_pos, cod_sol)
                             escreveu_algo = True
                         else:
                             if cod_limpo and cod_limpo not in codigos_processados:
