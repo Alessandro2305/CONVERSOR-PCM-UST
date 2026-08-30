@@ -1,4 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
+    // Chave única para controle no LocalStorage
+    const STORAGE_KEY = 'pcm_historico';
+
     // Elementos da DOM
     const pdfInput = document.getElementById("pdfInput");
     const excelInput = document.getElementById("excelInput");
@@ -22,7 +25,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const tbody = document.getElementById("tabelaDados");
     const contadorItens = document.getElementById("contadorItens");
 
-    // Elementos da Barra de Progresso
+    // Barra de Progresso
     const progressContainer = document.getElementById("progressContainer");
     const progressBar = document.getElementById("progressBar");
     const progressPercent = document.getElementById("progressPercent");
@@ -101,7 +104,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // Processar Arquivos com Barra de Progresso
+    // Processar Arquivos
     btnProcessar?.addEventListener("click", async () => {
         const filePdf = pdfInput?.files[0];
         const fileExcel = excelInput?.files[0];
@@ -119,13 +122,12 @@ document.addEventListener("DOMContentLoaded", () => {
         if (progressContainer) progressContainer.style.display = "block";
 
         setProgress(10, "Enviando arquivos para o servidor...");
-        const inicioTempo = Date.now(); // Marca inicio da execução
+        const inicioTempo = Date.now();
 
         let atualPercent = 10;
         const intervalProgresso = setInterval(() => {
             if (atualPercent < 90) {
                 atualPercent += 10;
-                if (atualPercent > 90) atualPercent = 90;
                 setProgress(atualPercent, "Cruzando dados e convertendo códigos SOL...");
             }
         }, 150);
@@ -149,18 +151,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const data = await response.json();
 
-            // 1. Atualiza tabela e métricas na aba Conversor
+            // 1. Atualiza tabela e métricas
             const metricas = renderizarTabelaEMetricas(data.itens || []);
 
-            // 2. Cálculo do tempo decorrido em minutos (mínimo de 1 min para exibição)
-            const fimTempo = Date.now();
-            const duracaoSegundos = Math.round((fimTempo - inicioTempo) / 1000);
-            const duracaoMinutos = Math.max(1, Math.round(duracaoSegundos / 60));
+            // 2. Tempo decorrido (em segundos ou formatado para exibição)
+            const duracaoSegundos = Math.round((Date.now() - inicioTempo) / 1000);
+            const tempoExibicao = duracaoSegundos < 60 ? `${duracaoSegundos}s` : `${Math.round(duracaoSegundos / 60)} min`;
 
-            // 3. REGISTRA NO HISTÓRICO LOCALSTORAGE
-            registrarHistorico(metricas.convertidos, metricas.total, duracaoMinutos);
+            // 3. Registra no LocalStorage
+            registrarHistorico(metricas.convertidos, metricas.total, tempoExibicao);
 
-            // 4. Download do PDF
+            // 4. Download do PDF processado
             if (data.pdf_base64) {
                 const byteCharacters = atob(data.pdf_base64);
                 const byteNumbers = new Array(byteCharacters.length);
@@ -184,11 +185,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             }
 
-            // 5. Barra de progresso 100%
+            // 5. Conclusão
             setProgress(100, "Processamento concluído com sucesso!");
             setStep(3);
 
-            await new Promise(r => setTimeout(r, 1500));
+            await new Promise(r => setTimeout(r, 1200));
 
         } catch (error) {
             clearInterval(intervalProgresso);
@@ -261,7 +262,7 @@ document.addEventListener("DOMContentLoaded", () => {
         setStep(1);
     });
 
-    // Navegação pelas abas da barra lateral
+    // Navegação por abas
     document.querySelectorAll('.btn-caixa').forEach(btn => {
         btn.addEventListener('click', () => {
             const targetAba = btn.getAttribute('data-aba');
@@ -287,8 +288,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
-    // Registra o lote processado no localStorage
-    function registrarHistorico(qtdConvertidos, totalItens, tempoMinutos) {
+    function registrarHistorico(qtdConvertidos, totalItens, tempoFormatado) {
         const agora = new Date();
         const dataFormatada = agora.toLocaleDateString('pt-BR') + ' ' + agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
@@ -296,23 +296,21 @@ document.addEventListener("DOMContentLoaded", () => {
             data: dataFormatada,
             convertidos: qtdConvertidos,
             total: totalItens,
-            tempo: tempoMinutos
+            tempo: tempoFormatado
         };
 
-        const historico = JSON.parse(localStorage.getItem('pcm_historico')) || [];
+        const historico = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
         historico.unshift(lote);
-        localStorage.setItem('pcm_historico', JSON.stringify(historico));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(historico));
     }
 
-    // Renderiza a tabela do Histórico e soma os totais
     function renderizarHistorico() {
-        const historico = JSON.parse(localStorage.getItem('pcm_historico')) || [];
+        const historico = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
         const tbodyHistorico = document.getElementById('historicoTbody');
         if (!tbodyHistorico) return;
 
         tbodyHistorico.innerHTML = '';
         let somaConvertidos = 0;
-        let somaTempo = 0;
 
         if (historico.length === 0) {
             tbodyHistorico.innerHTML = '<tr><td colspan="4" style="text-align:center;">Nenhum registro no histórico.</td></tr>';
@@ -325,14 +323,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
         historico.forEach(item => {
             somaConvertidos += Number(item.convertidos);
-            somaTempo += Number(item.tempo);
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>${item.data}</td>
                 <td><strong>${item.convertidos}</strong></td>
                 <td>${item.total}</td>
-                <td>${item.tempo} min</td>
+                <td>${item.tempo}</td>
             `;
             tbodyHistorico.appendChild(tr);
         });
@@ -340,24 +337,13 @@ document.addEventListener("DOMContentLoaded", () => {
         const elTotal = document.getElementById('historicoTotalConvertidos');
         const elTempo = document.getElementById('historicoTempoTotal');
         if (elTotal) elTotal.innerText = somaConvertidos;
-        if (elTempo) elTempo.innerText = `${somaTempo} min`;
+        if (elTempo) elTempo.innerText = `${historico.length} lotes`;
     }
 
     document.getElementById('btnLimparHistorico')?.addEventListener('click', () => {
-    if (confirm('Deseja realmente apagar todo o histórico de execuções?')) {
-        // Remove do LocalStorage (substitua pelo nome exato da chave usada no seu script)
-        localStorage.removeItem('historicoConversor'); 
-        
-        // Zera a tabela na tela
-        document.getElementById('historicoTbody').innerHTML = '';
-        
-        // Zera os contadores de topo
-        if(document.getElementById('historicoTotalConvertidos')) {
-            document.getElementById('historicoTotalConvertidos').innerText = '0';
+        if (confirm('Deseja realmente apagar todo o histórico de execuções?')) {
+            localStorage.removeItem(STORAGE_KEY);
+            renderizarHistorico();
         }
-        if(document.getElementById('historicoTempoTotal')) {
-            document.getElementById('historicoTempoTotal').innerText = '0 min';
-        }
-    }
-});
+    });
 });
