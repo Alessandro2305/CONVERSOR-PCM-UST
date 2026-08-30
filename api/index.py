@@ -19,13 +19,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def limpar_codigo(codigo) -> str:
-    if codigo is None:
+def extrair_numeros_chaves(texto) -> str:
+    if texto is None:
         return ""
-    # Remove qualquer caractere que não seja letra ou número e converte para maiúsculo
-    texto = re.sub(r'[^A-Z0-9]', '', str(codigo).strip().upper())
-    # Normaliza tirando o sufixo CNH caso exista (ex: 84561324CNH -> 84561324)
-    return re.sub(r'CNH$', '', texto)
+    txt = str(texto).upper().strip()
+    # Remove palavras/sufixos conhecidos para isolar a chave numerica/alfanumerica core
+    txt = re.sub(r'^(CASE|VALTRA|MERCEDES|VOLVO|JOHN DEERE|CATERPILLAR|SKF|EATON)[-\s]*', '', txt)
+    txt = re.sub(r'CNH$', '', txt)
+    # Retorna apenas os caracteres alfanumericos limpos
+    return re.sub(r'[^A-Z0-9]', '', txt)
 
 @app.get("/")
 @app.get("/api")
@@ -41,42 +43,39 @@ async def escrever_no_pdf_original(
     excel_depara: UploadFile = File(...)
 ):
     try:
-        # 1. Leitura Completa de Todas as Abas do Excel para Mapeamento Global
+        # 1. Leitura Completa e Mapeamento Tolerante da Planilha Excel
         excel_bytes = await excel_depara.read()
         wb = openpyxl.load_workbook(filename=io.BytesIO(excel_bytes), data_only=True)
 
         mapa_sol = {}
         mapa_desc = {}
 
-        # Prioriza aba chamada 'C', 'CNH' ou percorre todas
-        abas_para_ler = []
-        for name in wb.sheetnames:
-            if name.strip().upper() in ['C', 'CNH', 'CASE', 'DEPARA', 'DE-PARA']:
-                abas_para_ler.insert(0, wb[name])
-            else:
-                abas_para_ler.append(wb[name])
+        # Mapeia todas as abas priorizando a aba 'C' ou a primeira ativa
+        sheet = wb['C'] if 'C' in wb.sheetnames else wb.active
 
-        for sheet in abas_para_ler:
-            for row in sheet.iter_rows(min_row=2, values_only=True):
-                if not row or all(v is None for v in row):
-                    continue
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            if not row or all(v is None for v in row):
+                continue
 
-                raw_sol = str(row[0] or '').replace(".0", "").strip()
-                raw_desc = str(row[1] or '').strip() if len(row) > 1 and row[1] else "SEM DESCRIÇÃO"
+            raw_sol = str(row[0] or '').replace(".0", "").strip()
+            raw_desc = str(row[1] or '').strip() if len(row) > 1 and row[1] else "SEM DESCRIÇÃO"
 
-                if not raw_sol or raw_sol.lower() in ["none", "nan"]:
-                    continue
+            if not raw_sol or raw_sol.lower() in ["none", "nan"]:
+                continue
 
-                # Percorre as colunas procurando a chave original do item
-                for idx in range(len(row)):
-                    if row[idx] is not None:
-                        chave = limpar_codigo(row[idx])
-                        if chave and len(chave) >= 3 and chave not in ["NONE", "NAN"]:
-                            if chave not in mapa_sol:
-                                mapa_sol[chave] = raw_sol
-                                mapa_desc[chave] = raw_desc
+            # Mapeia os códigos presentes na Coluna C (idx 2) e demais colunas
+            indices = [2, 1, 0] + list(range(3, len(row)))
+            for idx in indices:
+                if idx < len(row) and row[idx] is not None:
+                    val_str = str(row[idx])
+                    chave_limpa = extrair_numeros_chaves(val_str)
+                    
+                    if chave_limpa and len(chave_limpa) >= 3 and chave_limpa not in ["NONE", "NAN"]:
+                        if chave_limpa not in mapa_sol:
+                            mapa_sol[chave_limpa] = raw_sol
+                            mapa_desc[chave_limpa] = raw_desc
 
-        # 2. Processamento de Leitura e Escrita do PDF
+        # 2. Leitura do PDF e Cruzamento
         pdf_bytes = await pdf_file.read()
         reader_base = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
@@ -89,64 +88,77 @@ async def escrever_no_pdf_original(
                 page_width = float(page.mediabox.width)
                 page_height = float(page.mediabox.height)
 
+                texto_bruto_pagina = page.extract_text() or ""
+                
+                # Coleta termos alfanuméricos suspeitos de serem códigos
+                candidatos = re.findall(r'\b[A-Z0-9]{4,20}\b', texto_bruto_pagina)
+
+                # Mapeia posições Y dos textos para escrever
+                posicoes_texto = []
+                def visitor_body(text, cm, tm, font_dict, font_size):
+                    if not text:
+                        return
+                    t = str(text).strip()
+                    if not t:
+                        return
+                    matrix = tm if tm is not None and len(tm) >= 6 else cm
+                    x = matrix[4] if matrix and len(matrix) >= 6 else 0
+                    y = matrix[5] if matrix and len(matrix) >= 6 else 0
+                    posicoes_texto.append((t, x, y))
+
+                page.extract_text(visitor_text=visitor_body)
+
                 packet = io.BytesIO()
                 can = canvas.Canvas(packet, pagesize=(page_width, page_height))
                 escreveu_algo = False
 
-                def visitor_body(text, cm, tm, font_dict, font_size):
-                    nonlocal escreveu_algo
-                    if not text:
-                        return
+                ignorar = {"ORCAMENTO", "SERVICO", "EMITENTE", "ENDERECO", "CLIENTE", "CHASSI", "GARANT", "REVISAO", "CONJUNTO", "TRANSMISSAO", "DESCRICAO", "LUBRIFICANTES", "COMPONENTES", "ZLCF14208", "PARANAVAI", "USACUCAR", "TECNICO", "PECAS"}
 
-                    texto_bruto = str(text).strip()
-                    if not texto_bruto:
-                        return
+                for token in candidatos:
+                    if token.upper() in ignorar:
+                        continue
 
-                    matrix = tm if tm is not None and len(tm) >= 6 else cm
-                    x_pos = matrix[4] if matrix and len(matrix) >= 6 else 0
-                    y_pos = matrix[5] if matrix and len(matrix) >= 6 else 0
+                    chave_pdf = extrair_numeros_chaves(token)
+                    if len(chave_pdf) < 3:
+                        continue
 
-                    cod_chave = limpar_codigo(texto_bruto)
+                    if chave_pdf in mapa_sol:
+                        raw_sol = mapa_sol[chave_pdf]
+                        descricao = mapa_desc.get(chave_pdf, "SEM DESCRIÇÃO")
+                        cod_sol = f"SOL-{raw_sol}" if not raw_sol.startswith("SOL") else raw_sol
 
-                    # REGRAS DE FILTRO AJUSTADAS PARA O DOCUMENTO DA AGRICASE:
-                    # - Posição X da coluna do Código: entre 30 e 130
-                    # - Posição Y da Tabela de Peças: abaixo do cabeçalho da OS (y_pos < height - 200)
-                    if 30 <= x_pos <= 130 and y_pos < (page_height - 200) and len(cod_chave) >= 4:
-                        
-                        # Descarta títulos e cabeçalhos
-                        if "CODIGO" in cod_chave or "PECAS" in cod_chave or "DESCRICAO" in cod_chave:
-                            return
+                        if chave_pdf not in codigos_processados:
+                            codigos_processados.add(chave_pdf)
+                            itens_encontrados.append({
+                                "status": "Convertido",
+                                "codigo_original": token,
+                                "codigo_sol": cod_sol,
+                                "descricao": descricao
+                            })
 
-                        if cod_chave in mapa_sol:
-                            raw_sol = mapa_sol[cod_chave]
-                            descricao = mapa_desc.get(cod_chave, "SEM DESCRIÇÃO")
-                            cod_sol = f"SOL-{raw_sol}" if not raw_sol.startswith("SOL") else raw_sol
+                        # Localiza Y para desenhar a marcação no PDF
+                        y_pos_desenho = None
+                        for txt_vis, x_vis, y_vis in posicoes_texto:
+                            if token in txt_vis or chave_pdf in extrair_numeros_chaves(txt_vis):
+                                if y_vis < (page_height - 180): # Ignora cabecalho superior
+                                    y_pos_desenho = y_vis
+                                    break
 
-                            if cod_chave not in codigos_processados:
-                                codigos_processados.add(cod_chave)
-                                itens_encontrados.append({
-                                    "status": "Convertido",
-                                    "codigo_original": texto_bruto,
-                                    "codigo_sol": cod_sol,
-                                    "descricao": descricao
-                                })
-
-                            # Escreve a SOL logo à frente da coluna CÓDIGO (em X = 135)
+                        if y_pos_desenho is not None:
                             can.setFont("Helvetica-Bold", 7.5)
-                            can.setFillColor(colors.HexColor("#0284c7")) # Azul destaque
-                            can.drawString(135, y_pos, cod_sol)
+                            can.setFillColor(colors.HexColor("#0284c7"))
+                            can.drawString(135, y_pos_desenho, cod_sol)
                             escreveu_algo = True
 
-                        elif cod_chave not in codigos_processados and not cod_chave.isdigit():
-                            codigos_processados.add(cod_chave)
+                    elif chave_pdf not in codigos_processados and not token.isdigit():
+                        if "CNH" in token.upper() or len(token) >= 6:
+                            codigos_processados.add(chave_pdf)
                             itens_encontrados.append({
                                 "status": "Não encontrado",
-                                "codigo_original": texto_bruto,
+                                "codigo_original": token,
                                 "codigo_sol": "—",
                                 "descricao": "SEM DESCRIÇÃO"
                             })
-
-                page.extract_text(visitor_text=visitor_body)
 
                 if escreveu_algo:
                     can.save()
