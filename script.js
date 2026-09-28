@@ -2,7 +2,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Chave única para controle no LocalStorage
     const STORAGE_KEY = 'pcm_historico';
 
-    // Elementos da DOM
+    // Elementos da DOM (Aba Principal)
     const pdfInput = document.getElementById("pdfInput");
     const excelInput = document.getElementById("excelInput");
     const pdfName = document.getElementById("pdfName");
@@ -104,7 +104,41 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // Processar Arquivos
+    // --- LÓGICA DE SELEÇÃO DE ARQUIVOS (ABA CNH) CORRIGIDA ---
+
+    const pdfInputCNH = document.getElementById('pdfInputCNH');
+    const pdfNameCNH = document.getElementById('pdfNameCNH');
+    const pdfSizeCNH = document.getElementById('pdfSizeCNH');
+    const pdfCheckCNH = document.getElementById('pdfCheckCNH');
+
+    if (pdfInputCNH) {
+        pdfInputCNH.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                if (pdfNameCNH) pdfNameCNH.textContent = file.name;
+                if (pdfSizeCNH) pdfSizeCNH.textContent = formatBytes(file.size);
+                if (pdfCheckCNH) pdfCheckCNH.style.display = "block";
+            }
+        });
+    }
+
+    const excelInputCNH = document.getElementById('excelInputCNH');
+    const excelNameCNH = document.getElementById('excelNameCNH');
+    const excelSizeCNH = document.getElementById('excelSizeCNH');
+    const excelCheckCNH = document.getElementById('excelCheckCNH');
+
+    if (excelInputCNH) {
+        excelInputCNH.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                if (excelNameCNH) excelNameCNH.textContent = file.name;
+                if (excelSizeCNH) excelSizeCNH.textContent = formatBytes(file.size);
+                if (excelCheckCNH) excelCheckCNH.style.display = "block";
+            }
+        });
+    }
+
+    // Processar Arquivos (Aba Principal)
     btnProcessar?.addEventListener("click", async () => {
         const filePdf = pdfInput?.files[0];
         const fileExcel = excelInput?.files[0];
@@ -154,7 +188,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // 1. Atualiza tabela e métricas
             const metricas = renderizarTabelaEMetricas(data.itens || []);
 
-            // 2. Tempo decorrido (em segundos ou formatado para exibição)
+            // 2. Tempo decorrido
             const duracaoSegundos = Math.round((Date.now() - inicioTempo) / 1000);
             const tempoExibicao = duracaoSegundos < 60 ? `${duracaoSegundos}s` : `${Math.round(duracaoSegundos / 60)} min`;
 
