@@ -10,7 +10,7 @@ from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 
-app = FastAPI(redirect_slashes=False)
+app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,7 +29,6 @@ def extrair_codigo_inteligente(texto, tipo="principal") -> str:
         txt = re.sub(r'CNH', '', txt)
         txt = re.sub(r'CASE', '', txt)
     
-    # Mantém letras, números, hífens, barras e pontos
     return re.sub(r'[^A-Z0-9\-\./]', '', txt)
 
 @app.post("/api/escrever-no-pdf-original")
@@ -53,7 +52,7 @@ async def escrever_no_pdf_original(
                 continue
 
             valores_linha = [str(v).strip() for v in row if v is not None and str(v).strip() != ""]
-            if not valores_linha:
+            if len(valores_linha) < 2:
                 continue
             
             raw_sol = valores_linha[0].replace(".0", "")
@@ -61,13 +60,11 @@ async def escrever_no_pdf_original(
 
             for val in valores_linha:
                 chave = extrair_codigo_inteligente(val, tipo)
-                if chave and len(chave) >= 2 and chave not in ["NONE", "NAN"]:
+                if chave and len(chave) >= 2 and chave not in ["NONE", "NAN", raw_sol]:
                     mapa_sol[chave] = raw_sol
                     mapa_desc[chave] = raw_desc
 
         print(f">>> TOTAL DE CHAVES CARREGADAS NO EXCEL: {len(mapa_sol)}")
-        # Correção aplicada aqui (convertido para list antes de fatiar)
-        print(f">>> AMOSTRA DE CHAVES EXCEL: {list(mapa_sol.keys())[:10]}")
 
         # 2. Processamento do PDF
         pdf_bytes = await pdf_file.read()
@@ -97,17 +94,16 @@ async def escrever_no_pdf_original(
                     x1 = word['x1']
                     y_pos = page_height - word['bottom']
 
-                    # Filtro específico para a coluna de códigos do PDF (coluna da esquerda)
-                    if x0 <= 120 and y_pos < (page_height - 130):
-                        if any(term in texto_bruto.upper() for term in ["CODIGO", "PEÇAS", "PECAS", "DESCRIÇÃO", "DESCRICAO", "NCM", "QTDE"]):
+                    # FLEXIBILIDADE TOTAL: Analisa a metade esquerda da página (evita cabeçalho e rodapé)
+                    if 20 <= x0 <= 220 and (80 < y_pos < (page_height - 130)):
+                        if any(term in texto_bruto.upper() for term in ["CODIGO", "PEÇAS", "PECAS", "DESCRIÇÃO", "DESCRICAO", "NCM", "QTDE", "ORÇAMENTO", "TOTAL", "CLIENTE", "END"]):
                             continue
 
                         cod_limpo = extrair_codigo_inteligente(texto_bruto, tipo)
 
-                        if len(cod_limpo) >= 2:
+                        if len(cod_limpo) >= 3:
                             raw_sol = mapa_sol.get(cod_limpo)
                             
-                            # Busca tolerante sem hífens se necessário
                             if not raw_sol:
                                 for k, v in mapa_sol.items():
                                     if k == cod_limpo or k.replace("-", "") == cod_limpo.replace("-", ""):
