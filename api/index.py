@@ -66,8 +66,8 @@ async def escrever_no_pdf_original(
                     mapa_desc[chave] = raw_desc
 
         print(f">>> TOTAL DE CHAVES CARREGADAS NO EXCEL: {len(mapa_sol)}")
-        # Exibe algumas chaves de exemplo no log do Railway para conferência
-        print(f">>> AMOSTRA DE CHAVES EXCEL: {list(mapa_sol.keys()[:10])}")
+        # Correção aplicada aqui (convertido para list antes de fatiar)
+        print(f">>> AMOSTRA DE CHAVES EXCEL: {list(mapa_sol.keys())[:10]}")
 
         # 2. Processamento do PDF
         pdf_bytes = await pdf_file.read()
@@ -97,8 +97,7 @@ async def escrever_no_pdf_original(
                     x1 = word['x1']
                     y_pos = page_height - word['bottom']
 
-                    # Filtro específico para a coluna de códigos deste modelo de PDF (coluna da esquerda, x0 < 100)
-                    # E ignorando o cabeçalho superior
+                    # Filtro específico para a coluna de códigos do PDF (coluna da esquerda)
                     if x0 <= 120 and y_pos < (page_height - 130):
                         if any(term in texto_bruto.upper() for term in ["CODIGO", "PEÇAS", "PECAS", "DESCRIÇÃO", "DESCRICAO", "NCM", "QTDE"]):
                             continue
@@ -106,10 +105,9 @@ async def escrever_no_pdf_original(
                         cod_limpo = extrair_codigo_inteligente(texto_bruto, tipo)
 
                         if len(cod_limpo) >= 2:
-                            # Tenta encontrar correspondência exata ou parcial na base
                             raw_sol = mapa_sol.get(cod_limpo)
                             
-                            # Se não achar direto, tenta buscar sem hífens/pontos se houver variação
+                            # Busca tolerante sem hífens se necessário
                             if not raw_sol:
                                 for k, v in mapa_sol.items():
                                     if k == cod_limpo or k.replace("-", "") == cod_limpo.replace("-", ""):
@@ -129,7 +127,7 @@ async def escrever_no_pdf_original(
                                         "descricao": descricao
                                     })
 
-                                # Escreve o código SOL logo à frente do código original
+                                # Escreve o código SOL na frente do original
                                 x_escrita = x1 + 4
                                 can.setFillColor(colors.white)
                                 can.rect(x_escrita - 1, y_pos - 1, 55, 9, fill=1, stroke=0)
@@ -141,7 +139,6 @@ async def escrever_no_pdf_original(
                                 print(f"-> CONVERTIDO E ESCRITO: {texto_bruto} -> {cod_sol}")
 
                             elif len(cod_limpo) >= 4 and cod_limpo not in codigos_processados:
-                                # Registra como não encontrado para aparecer na tabela com status de atenção
                                 codigos_processados.add(cod_limpo)
                                 itens_encontrados.append({
                                     "status": "Não encontrado",
