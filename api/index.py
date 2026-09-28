@@ -32,17 +32,17 @@ def extrair_codigo_inteligente(texto, tipo="principal") -> str:
         txt = re.sub(r'CNH', '', txt)
         txt = re.sub(r'CASE', '', txt)
     
-    # Preserva letras (A-Z), números (0-9), hífens (-), pontos (.) e barras (/) para não ignorar letras em orçamentos variados
+    # Preserva letras (A-Z), números (0-9), hífens (-), pontos (.) e barras (/)
     return re.sub(r'[^A-Z0-9\-\./]', '', txt)
 
 @app.post("/api/escrever-no-pdf-original")
 async def escrever_no_pdf_original(
     pdf_file: UploadFile = File(...),
     excel_depara: UploadFile = File(...),
-    tipo: str = Form("principal")  # Recebe se é 'principal' ou 'cnh' de forma opcional
+    tipo: str = Form("principal")  # Recebe se é 'principal' ou 'cnh'
 ):
     try:
-        # 1. Leitura Completa da Planilha Excel
+        # 1. Leitura Completa da Planilha Excel (Varre colunas dinamicamente)
         excel_bytes = await excel_depara.read()
         wb = openpyxl.load_workbook(filename=io.BytesIO(excel_bytes), data_only=True)
 
@@ -55,22 +55,22 @@ async def escrever_no_pdf_original(
             if not row or all(v is None for v in row):
                 continue
 
-            raw_sol = str(row[0] or '').replace(".0", "").strip()
-            raw_desc = str(row[1] or '').strip() if len(row) > 1 and row[1] else "SEM DESCRIÇÃO"
-
-            if not raw_sol or raw_sol.lower() in ["none", "nan"]:
+            valores_linha = [str(v).strip() for v in row if v is not None and str(v).strip() != ""]
+            if not valores_linha:
                 continue
+            
+            raw_sol = valores_linha[0].replace(".0", "")
+            raw_desc = valores_linha[1] if len(valores_linha) > 1 else "SEM DESCRIÇÃO"
 
-            # Indexa todas as variações/colunas da planilha
-            for cell in row:
-                if cell is not None:
-                    chave = extrair_codigo_inteligente(cell, tipo)
-                    if chave and len(chave) >= 2 and chave not in ["NONE", "NAN"]:
-                        if chave not in mapa_sol:
-                            mapa_sol[chave] = raw_sol
-                            mapa_desc[chave] = raw_desc
+            for val in valores_linha:
+                chave = extrair_codigo_inteligente(val, tipo)
+                if chave and len(chave) >= 2 and chave not in ["NONE", "NAN"]:
+                    mapa_sol[chave] = raw_sol
+                    mapa_desc[chave] = raw_desc
 
-        # 2. Processamento do PDF
+        print(f"DEBUG: Total de chaves mapeadas no Excel: {len(mapa_sol)}")
+
+        # 2. Processamento do PDF (Sem travas restritas de coordenada horizontal)
         pdf_bytes = await pdf_file.read()
         reader_base = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
@@ -90,25 +90,21 @@ async def escrever_no_pdf_original(
                 escreveu_algo = False
 
                 words = page_pdfplumber.extract_words()
-                
+                print(f"DEBUG: Página {page_idx} extraiu {len(words)} palavras.")
+
                 for word in words:
                     texto_bruto = word['text'].strip()
-                    
-                    x0 = word['x0']
                     x1 = word['x1']
                     y_pos = page_height - word['bottom']
 
-                    # Critério de posição no layout do PDF
-                    if x0 <= 150 and y_pos < (page_height - 120):
-                        
-                        if any(term in texto_bruto.upper() for term in ["CODIGO", "PECAS", "DESCRICAO", "LUBRIFICANTES"]):
+                    # Filtro de altura (ignora apenas o cabeçalho superior extremo da página)
+                    if y_pos < (page_height - 60):
+                        if any(term in texto_bruto.upper() for term in ["CODIGO", "PECAS", "DESCRICAO", "LUBRIFICANTES", "QUANTIDADE"]):
                             continue
 
                         cod_limpo = extrair_codigo_inteligente(texto_bruto, tipo)
 
-                        # Validação que aceita códigos com letras e números (tamanho mínimo 2 ou 3)
                         if len(cod_limpo) >= 2:
-                            
                             if cod_limpo in mapa_sol:
                                 raw_sol = mapa_sol[cod_limpo]
                                 descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
@@ -123,9 +119,8 @@ async def escrever_no_pdf_original(
                                         "descricao": descricao
                                     })
 
-                                # Escreve na frente do código original
+                                # Escreve o código SOL convertido em cima/frente do original
                                 x_escrita = x1 + 4
-                                
                                 can.setFillColor(colors.white)
                                 can.rect(x_escrita - 1, y_pos - 1, 52, 9, fill=1, stroke=0)
                                 
@@ -134,7 +129,8 @@ async def escrever_no_pdf_original(
                                 can.drawString(x_escrita, y_pos, cod_sol)
                                 escreveu_algo = True
 
-                            elif cod_limpo not in codigos_processados:
+                            elif cod_limpo not in codigos_processados and len(cod_limpo) >= 4:
+                                # Opcional: registra itens não encontrados que pareçam códigos relevantes
                                 codigos_processados.add(cod_limpo)
                                 itens_encontrados.append({
                                     "status": "Não encontrado",
