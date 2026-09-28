@@ -4,7 +4,7 @@ import base64
 import traceback
 import openpyxl
 import pdfplumber
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
@@ -20,21 +20,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def extrair_apenas_codigo_limpo(texto) -> str:
-    """ Limpa o código removendo CNH/CASE mesmo colados no número """
+def extrair_codigo_inteligente(texto, tipo="principal") -> str:
+    """ Limpeza flexível que preserva letras e números para ambos os casos,
+        removendo CNH/CASE apenas se for a aba CNH.
+    """
     if not texto:
         return ""
     txt = str(texto).upper().strip()
-    # Remove CNH ou CASE do final ou do início
-    txt = re.sub(r'CNH', '', txt)
-    txt = re.sub(r'CASE', '', txt)
-    # Remove qualquer caractere que não seja letra/número
-    return re.sub(r'[^A-Z0-9]', '', txt)
+    
+    if tipo == "cnh":
+        txt = re.sub(r'CNH', '', txt)
+        txt = re.sub(r'CASE', '', txt)
+    
+    # Preserva letras (A-Z), números (0-9), hífens (-), pontos (.) e barras (/) para não ignorar letras em orçamentos variados
+    return re.sub(r'[^A-Z0-9\-\./]', '', txt)
 
 @app.post("/api/escrever-no-pdf-original")
 async def escrever_no_pdf_original(
     pdf_file: UploadFile = File(...),
-    excel_depara: UploadFile = File(...)
+    excel_depara: UploadFile = File(...),
+    tipo: str = Form("principal")  # Recebe se é 'principal' ou 'cnh' de forma opcional
 ):
     try:
         # 1. Leitura Completa da Planilha Excel
@@ -59,8 +64,8 @@ async def escrever_no_pdf_original(
             # Indexa todas as variações/colunas da planilha
             for cell in row:
                 if cell is not None:
-                    chave = extrair_apenas_codigo_limpo(cell)
-                    if chave and len(chave) >= 3 and chave not in ["NONE", "NAN"]:
+                    chave = extrair_codigo_inteligente(cell, tipo)
+                    if chave and len(chave) >= 2 and chave not in ["NONE", "NAN"]:
                         if chave not in mapa_sol:
                             mapa_sol[chave] = raw_sol
                             mapa_desc[chave] = raw_desc
@@ -84,7 +89,6 @@ async def escrever_no_pdf_original(
                 can = canvas.Canvas(packet, pagesize=(page_width, page_height))
                 escreveu_algo = False
 
-                # Extrai palavras completas da página
                 words = page_pdfplumber.extract_words()
                 
                 for word in words:
@@ -92,22 +96,18 @@ async def escrever_no_pdf_original(
                     
                     x0 = word['x0']
                     x1 = word['x1']
-                    # Converte coordenada Y do pdfplumber para o padrão do ReportLab
                     y_pos = page_height - word['bottom']
 
-                    # CRITÉRIO AJUSTADO COM BASE NO SEU LAYOUT:
-                    # - Posição X da coluna CÓDIGO (entre 20 e 150)
-                    # - Posição Y (abaixo do cabeçalho de topo, Y < page_height - 120)
+                    # Critério de posição no layout do PDF
                     if x0 <= 150 and y_pos < (page_height - 120):
                         
-                        # Ignora termos de cabeçalho
                         if any(term in texto_bruto.upper() for term in ["CODIGO", "PECAS", "DESCRICAO", "LUBRIFICANTES"]):
                             continue
 
-                        cod_limpo = extrair_apenas_codigo_limpo(texto_bruto)
+                        cod_limpo = extrair_codigo_inteligente(texto_bruto, tipo)
 
-                        # Verifica se é um código válido de peça (numérico ou com CNH)
-                        if len(cod_limpo) >= 4 and ("CNH" in texto_bruto.upper() or re.search(r'\d{4,}', cod_limpo)):
+                        # Validação que aceita códigos com letras e números (tamanho mínimo 2 ou 3)
+                        if len(cod_limpo) >= 2:
                             
                             if cod_limpo in mapa_sol:
                                 raw_sol = mapa_sol[cod_limpo]
@@ -123,7 +123,7 @@ async def escrever_no_pdf_original(
                                         "descricao": descricao
                                     })
 
-                                # Escreve na frente do código original (com tarja branca limpa)
+                                # Escreve na frente do código original
                                 x_escrita = x1 + 4
                                 
                                 can.setFillColor(colors.white)

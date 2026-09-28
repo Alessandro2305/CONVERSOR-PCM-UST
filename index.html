@@ -11,20 +11,24 @@
 
 <body>
 
-
     <div class="conteiner-lateral">
         <div class="lateral">
             <img src="img/logo.png" alt="Logo Usina Santa Terezinha" class="logo-img">
 
             <div class="caixa">
-                <button class="btn-caixa" data-aba="aba-conversor">
+                <button class="btn-caixa" data-aba="aba-painel">
                     <i class="fa-solid fa-house"></i>
                     Painel Principal
                 </button>
 
                 <button class="btn-caixa active" data-aba="aba-conversor">
                     <i class="fa-regular fa-file-lines"></i>
-                    Conversor
+                    Conversor principal
+                </button>
+
+                <button class="btn-caixa" data-aba="aba-cnh">
+                    <i class="fa-regular fa-file-lines"></i>
+                    Conversor CNH
                 </button>
 
                 <button class="btn-caixa" data-aba="aba-historico">
@@ -32,12 +36,12 @@
                     Histórico
                 </button>
 
-                <button class="btn-caixa">
+                <button class="btn-caixa" data-aba="aba-exportacoes">
                     <i class="fa-solid fa-download"></i>
                     Exportações
                 </button>
 
-                <button class="btn-caixa">
+                <button class="btn-caixa" data-aba="aba-configuracoes">
                     <i class="fa-solid fa-gear"></i>
                     Configurações
                 </button>
@@ -75,7 +79,18 @@
             </div>
         </header>
 
-        <!-- ABA CONVERSOR (Conteúdo Principal Envolto Corretamente) -->
+        <!-- ABA PAINEL PRINCIPAL -->
+        <div id="aba-painel" class="aba-conteudo" style="display: none;">
+            <div class="table-container" style="padding: 24px;">
+                <div class="table-header">
+                    <strong>Painel Principal</strong>
+                    <span>Visão geral do sistema</span>
+                </div>
+                <p style="margin-top: 15px; color: #475569;">Bem-vindo ao painel principal do sistema PCM.</p>
+            </div>
+        </div>
+
+        <!-- ABA CONVERSOR PRINCIPAL -->
         <div id="aba-conversor" class="aba-conteudo active">
             <!-- Stepper -->
             <div class="container">
@@ -200,7 +215,7 @@
                 </div>
             </div>
 
-            <!-- Barra de Progresso Redesenhada -->
+            <!-- Barra de Progresso -->
             <div id="progressContainer" class="progress-card" style="display: none;">
                 <div class="progress-header">
                     <div class="progress-status">
@@ -247,6 +262,191 @@
                             </tr>
                         </thead>
                         <tbody id="tabelaDados">
+                            <!-- Preenchido dinamicamente pelo JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ABA CONVERSOR CNH (Cópia fiel com IDs próprios para CNH) -->
+        <div id="aba-cnh" class="aba-conteudo" style="display: none;">
+            <!-- Header identificando a aba CNH -->
+            <div class="table-header" style="margin-bottom: 20px;">
+                <strong>Conversor CNH</strong>
+                <span>Processamento específico para CNH</span>
+            </div>
+
+            <!-- Stepper CNH -->
+            <div class="container">
+                <div class="container-box">
+                    <div class="box active">
+                        <label>1</label>
+                        <p>Selecionar Arquivos</p>
+                        <span></span>
+                    </div>
+                    <div class="box">
+                        <label>2</label>
+                        <p>Processar</p>
+                        <span></span>
+                    </div>
+                    <div class="box">
+                        <label>3</label>
+                        <p>Revisar Resultados</p>
+                        <span></span>
+                    </div>
+                    <div class="box">
+                        <label>4</label>
+                        <p>Exportar Excel</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Área de Upload de Arquivos CNH -->
+            <div class="upload-container">
+                <div class="upload-caixa">
+                    <div class="upload-info">
+                        <div class="upload-box blue">
+                            <i class="fa-solid fa-file-lines"></i>
+                        </div>
+                        <div class="upload-box-info">
+                            <strong>PDF do Sistema (CNH)</strong>
+                            <p>Selecione o arquivo PDF original</p>
+                        </div>
+                    </div>
+
+                    <div class="drop-card" onclick="document.getElementById('pdfInputCNH').click()">
+                        <div class="drop-card-content">
+                            <i class="fa-solid fa-file-pdf icon-file pdf"></i>
+                            <div class="file-details">
+                                <span class="file-name" id="pdfNameCNH">Selecione o PDF...</span>
+                                <span class="file-size" id="pdfSizeCNH"></span>
+                            </div>
+                            <i class="fa-solid fa-circle-check icon-check" id="pdfCheckCNH"></i>
+                        </div>
+                        <input type="file" id="pdfInputCNH" accept=".pdf" style="display:none">
+                    </div>
+                </div>
+
+                <div class="upload-caixa">
+                    <div class="upload-info">
+                        <div class="upload-box green">
+                            <i class="fa-solid fa-table"></i>
+                        </div>
+                        <div class="upload-box-info">
+                            <strong>Planilha de Conversão (CNH)</strong>
+                            <p>Selecione a planilha .xlsx de conversão</p>
+                        </div>
+                    </div>
+
+                    <div class="drop-card" onclick="document.getElementById('excelInputCNH').click()">
+                        <div class="drop-card-content">
+                            <i class="fa-solid fa-file-excel icon-file excel"></i>
+                            <div class="file-details">
+                                <span class="file-name" id="excelNameCNH">Selecione a planilha...</span>
+                                <span class="file-size" id="excelSizeCNH"></span>
+                            </div>
+                            <i class="fa-solid fa-circle-check icon-check" id="excelCheckCNH"></i>
+                        </div>
+                        <input type="file" id="excelInputCNH" accept=".xlsx, .xls" style="display:none">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Painel de Métricas CNH -->
+            <div class="metrics-container">
+                <div class="metric-card total">
+                    <div class="metric-icon blue">
+                        <i class="fa-solid fa-file-lines"></i>
+                    </div>
+                    <div class="metric-info">
+                        <h3 id="mTotalCNH">0</h3>
+                        <strong>Total de Itens</strong>
+                        <p>Itens identificados no PDF</p>
+                    </div>
+                </div>
+
+                <div class="metric-card success">
+                    <div class="metric-icon green">
+                        <i class="fa-solid fa-circle-check"></i>
+                    </div>
+                    <div class="metric-info">
+                        <h3 id="mConvertidosCNH">0</h3>
+                        <strong>Convertidos</strong>
+                        <p>Códigos encontrados</p>
+                    </div>
+                </div>
+
+                <div class="metric-card warning">
+                    <div class="metric-icon yellow">
+                        <i class="fa-solid fa-clock"></i>
+                    </div>
+                    <div class="metric-info">
+                        <h3 id="mPendentesCNH">0</h3>
+                        <strong>Pendentes</strong>
+                        <p>Requerem verificação</p>
+                    </div>
+                </div>
+
+                <div class="metric-card danger">
+                    <div class="metric-icon red">
+                        <i class="fa-solid fa-circle-xmark"></i>
+                    </div>
+                    <div class="metric-info">
+                        <h3 id="mNaoEncontradosCNH">0</h3>
+                        <strong>Não encontrados</strong>
+                        <p>Sem correspondência</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Barra de Progresso CNH -->
+            <div id="progressContainerCNH" class="progress-card" style="display: none;">
+                <div class="progress-header">
+                    <div class="progress-status">
+                        <span class="pulse-dot"></span>
+                        <span id="progressTextCNH">Cruzando dados e convertendo códigos CNH...</span>
+                    </div>
+                    <span id="progressPercentCNH" class="progress-badge">0%</span>
+                </div>
+                <div class="progress-track">
+                    <div id="progressBarCNH" class="progress-fill" style="width: 0%;">
+                        <div class="progress-shimmer"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Barra de Ações CNH -->
+            <div class="actions-btn">
+                <button class="btn btn-primary" id="btnProcessarCNH">
+                    <i class="fa-solid fa-play"></i> PROCESSAR ARQUIVOS CNH
+                </button>
+                <button class="btn btn-success" id="btnExportarCNH">
+                    <i class="fa-solid fa-file-excel"></i> EXPORTAR RESULTADO CNH
+                </button>
+                <button class="btn btn-lixo" id="btnLimparCNH">
+                    <i class="fa-solid fa-trash-can"></i> LIMPAR CNH
+                </button>
+            </div>
+
+            <!-- Tabela de Exibição dos Dados CNH -->
+            <div class="table-container">
+                <div class="table-header">
+                    <strong>Resultados do Processamento - CNH</strong>
+                    <span id="contadorItensCNH">0 itens identificados</span>
+                </div>
+
+                <div class="tabela-scroll">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>STATUS</th>
+                                <th>CÓDIGO ORIGINAL</th>
+                                <th>CÓDIGO CNH (CONVERTIDO)</th>
+                                <th>DESCRIÇÃO DO ITEM</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabelaDadosCNH">
                             <!-- Preenchido dinamicamente pelo JavaScript -->
                         </tbody>
                     </table>
@@ -317,28 +517,22 @@
                     <span>Informações Gerais e Desenvolvimento</span>
                 </div>
 
-                <div
-                    style="display: flex; gap: 20px; align-items: center; background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
-                    <div class="upload-box blue"
-                        style="width: 60px; height: 60px; font-size: 24px; display: flex; align-items: center; justify-content: center; border-radius: 8px;">
+                <div style="display: flex; gap: 20px; align-items: center; background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
+                    <div class="upload-box blue" style="width: 60px; height: 60px; font-size: 24px; display: flex; align-items: center; justify-content: center; border-radius: 8px;">
                         <i class="fa-solid fa-code"></i>
                     </div>
                     <div>
                         <h3 style="margin: 0 0 4px 0; color: #1e293b; font-size: 1.1rem;">Desenvolvedor do Sistema</h3>
-                        <p style="margin: 0; color: #64748b; font-size: 0.95rem; font-weight: 600;">Alessandro Mançano
-                            de Oliveira</p>
+                        <p style="margin: 0; color: #64748b; font-size: 0.95rem; font-weight: 600;">Alessandro Mançano de Oliveira</p>
                     </div>
                 </div>
 
                 <div style="line-height: 1.6; color: #475569; font-size: 0.95rem;">
                     <p style="margin-bottom: 12px;">
-                        <strong>Sistema de Conversão de PDF / Código Original x SOL</strong> desenvolvido exclusivamente
-                        para a <strong>Usina Santa Terezinha (PCM)</strong>.
+                        <strong>Sistema de Conversão de PDF / Código Original x SOL</strong> desenvolvido exclusivamente para a <strong>Usina Santa Terezinha (PCM)</strong>.
                     </p>
                     <p style="margin-bottom: 0;">
-                        Esta ferramenta automatiza o cruzamento de dados de requisições de compra, realizando a
-                        conversão direta de códigos originais para a codificação interna SOL e otimizando a exportação
-                        operacional.
+                        Esta ferramenta automatiza o cruzamento de dados de requisições de compra, realizando a conversão direta de códigos originais para a codificação interna SOL e otimizando a exportação operacional.
                     </p>
                 </div>
             </div>
