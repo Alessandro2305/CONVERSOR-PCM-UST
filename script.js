@@ -31,8 +31,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const progressPercent = document.getElementById("progressPercent");
     const progressText = document.getElementById("progressText");
 
-    // ENDPOINT OFICIAL NO RAILWAY
-    const API_ENDPOINT = 'https://conversor-pcm-ust-production-4afc.up.railway.app/convert';
+    // ENDPOINT OFICIAL NO RAILWAY (com a rota correta do FastAPI)
+    const API_ENDPOINT = 'https://conversor-pcm-ust-production-4afc.up.railway.app/api/escrever-no-pdf-original';
 
     function formatBytes(bytes) {
         if (bytes === 0) return '0 Bytes';
@@ -104,39 +104,102 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // --- LÓGICA DE SELEÇÃO DE ARQUIVOS (ABA CNH) CORRIGIDA ---
+    // Exemplo para o botão de processar da Aba CNH (adicione no seu DOMContentLoaded)
+const btnProcessarCNH = document.getElementById("btnProcessarCNH"); // Certifique-se de dar esse ID ao botão da CNH no HTML
 
-    const pdfInputCNH = document.getElementById('pdfInputCNH');
-    const pdfNameCNH = document.getElementById('pdfNameCNH');
-    const pdfSizeCNH = document.getElementById('pdfSizeCNH');
-    const pdfCheckCNH = document.getElementById('pdfCheckCNH');
+btnProcessarCNH?.addEventListener("click", async () => {
+    const filePdf = pdfInputCNH?.files[0];
+    const fileExcel = excelInputCNH?.files[0];
 
-    if (pdfInputCNH) {
-        pdfInputCNH.addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                if (pdfNameCNH) pdfNameCNH.textContent = file.name;
-                if (pdfSizeCNH) pdfSizeCNH.textContent = formatBytes(file.size);
-                if (pdfCheckCNH) pdfCheckCNH.style.display = "block";
-            }
-        });
+    if (!filePdf || !fileExcel) {
+        alert("Por favor, selecione tanto o PDF quanto a planilha Excel da CNH!");
+        return;
     }
 
-    const excelInputCNH = document.getElementById('excelInputCNH');
-    const excelNameCNH = document.getElementById('excelNameCNH');
-    const excelSizeCNH = document.getElementById('excelSizeCNH');
-    const excelCheckCNH = document.getElementById('excelCheckCNH');
+    const formData = new FormData();
+    formData.append("pdf_file", filePdf);
+    formData.append("excel_depara", fileExcel);
+    formData.append("tipo", "cnh"); // Informa ao FastAPI para aplicar a regra da CNH
 
-    if (excelInputCNH) {
-        excelInputCNH.addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                if (excelNameCNH) excelNameCNH.textContent = file.name;
-                if (excelSizeCNH) excelSizeCNH.textContent = formatBytes(file.size);
-                if (excelCheckCNH) excelCheckCNH.style.display = "block";
-            }
+    btnProcessarCNH.disabled = true;
+    if (progressContainer) progressContainer.style.display = "block";
+
+    setProgress(10, "Enviando arquivos CNH para o servidor...");
+    const inicioTempo = Date.now();
+
+    let atualPercent = 10;
+    const intervalProgresso = setInterval(() => {
+        if (atualPercent < 90) {
+            atualPercent += 10;
+            setProgress(atualPercent, "Processando dados da CNH...");
+        }
+    }, 150);
+
+    try {
+        const response = await fetch(API_ENDPOINT, {
+            method: 'POST',
+            body: formData
         });
+
+        clearInterval(intervalProgresso);
+
+        if (!response.ok) {
+            let detErro = "Erro no servidor de processamento da CNH.";
+            try {
+                const errorData = await response.json();
+                if (errorData.detail) detErro = errorData.detail;
+            } catch (_) { }
+            throw new Error(detErro);
+        }
+
+        const data = await response.json();
+
+        // Renderiza tabela e métricas na interface
+        const metricas = renderizarTabelaEMetricas(data.itens || []);
+
+        const duracaoSegundos = Math.round((Date.now() - inicioTempo) / 1000);
+        const tempoExibicao = duracaoSegundos < 60 ? `${duracaoSegundos}s` : `${Math.round(duracaoSegundos / 60)} min`;
+
+        registrarHistorico(metricas.convertidos, metricas.total, tempoExibicao);
+
+        // Download do PDF processado da CNH
+        if (data.pdf_base64) {
+            const byteCharacters = atob(data.pdf_base64);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: 'application/pdf' });
+            const blobUrl = URL.createObjectURL(blob);
+
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            if (isMobile) {
+                window.open(blobUrl, '_blank');
+            } else {
+                const a = document.createElement('a');
+                a.href = blobUrl;
+                a.download = `Orcamento_CNH_${Date.now()}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            }
+        }
+
+        setProgress(100, "Processamento da CNH concluído com sucesso!");
+        await new Promise(r => setTimeout(r, 1200));
+
+    } catch (error) {
+        clearInterval(intervalProgresso);
+        setProgress(0, "Falha no processamento.");
+        console.error("Erro no processamento CNH:", error);
+        alert(`Falha no processamento: ${error.message}`);
+    } finally {
+        btnProcessarCNH.disabled = false;
+        if (progressContainer) progressContainer.style.display = "none";
+        setProgress(0, "Processando arquivos...");
     }
+});
 
     // Processar Arquivos (Aba Principal)
     btnProcessar?.addEventListener("click", async () => {
