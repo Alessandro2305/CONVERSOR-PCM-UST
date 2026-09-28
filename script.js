@@ -31,8 +31,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const progressPercent = document.getElementById("progressPercent");
     const progressText = document.getElementById("progressText");
 
-    // ENDPOINT OFICIAL NO RENDER
-    const API_ENDPOINT = 'https://conversor-pcm-ust.onrender.com/api/escrever-no-pdf-original';
+    // ENDPOINT OFICIAL NO RAILWAY
+    const API_ENDPOINT = 'conversor-pcm-ust-production-4afc.up.railway.app';
 
     function formatBytes(bytes) {
         if (bytes === 0) return '0 Bytes';
