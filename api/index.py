@@ -21,9 +21,6 @@ app.add_middleware(
 )
 
 def extrair_codigo_inteligente(texto, tipo="principal") -> str:
-    """ Limpeza flexível que preserva letras e números para ambos os casos,
-        removendo CNH/CASE apenas se for a aba CNH.
-    """
     if not texto:
         return ""
     txt = str(texto).upper().strip()
@@ -32,17 +29,17 @@ def extrair_codigo_inteligente(texto, tipo="principal") -> str:
         txt = re.sub(r'CNH', '', txt)
         txt = re.sub(r'CASE', '', txt)
     
-    # Preserva letras (A-Z), números (0-9), hífens (-), pontos (.) e barras (/)
+    # Mantém letras, números, hífens, barras e pontos
     return re.sub(r'[^A-Z0-9\-\./]', '', txt)
 
 @app.post("/api/escrever-no-pdf-original")
 async def escrever_no_pdf_original(
     pdf_file: UploadFile = File(...),
     excel_depara: UploadFile = File(...),
-    tipo: str = Form("principal")  # Recebe se é 'principal' ou 'cnh'
+    tipo: str = Form("principal")
 ):
     try:
-        # 1. Leitura Completa da Planilha Excel (Varre colunas dinamicamente)
+        # 1. Leitura do Excel
         excel_bytes = await excel_depara.read()
         wb = openpyxl.load_workbook(filename=io.BytesIO(excel_bytes), data_only=True)
 
@@ -68,9 +65,11 @@ async def escrever_no_pdf_original(
                     mapa_sol[chave] = raw_sol
                     mapa_desc[chave] = raw_desc
 
-        print(f"DEBUG: Total de chaves mapeadas no Excel: {len(mapa_sol)}")
+        print(f">>> TOTAL DE CHAVES CARREGADAS NO EXCEL: {len(mapa_sol)}")
+        # Exibe algumas chaves de exemplo no log do Railway para conferência
+        print(f">>> AMOSTRA DE CHAVES EXCEL: {list(mapa_sol.keys()[:10])}")
 
-        # 2. Processamento do PDF (Sem travas restritas de coordenada horizontal)
+        # 2. Processamento do PDF
         pdf_bytes = await pdf_file.read()
         reader_base = PdfReader(io.BytesIO(pdf_bytes))
         writer = PdfWriter()
@@ -90,23 +89,34 @@ async def escrever_no_pdf_original(
                 escreveu_algo = False
 
                 words = page_pdfplumber.extract_words()
-                print(f"DEBUG: Página {page_idx} extraiu {len(words)} palavras.")
+                print(f">>> PÁGINA {page_idx}: Extraiu {len(words)} palavras do PDF.")
 
                 for word in words:
                     texto_bruto = word['text'].strip()
+                    x0 = word['x0']
                     x1 = word['x1']
                     y_pos = page_height - word['bottom']
 
-                    # Filtro de altura (ignora apenas o cabeçalho superior extremo da página)
-                    if y_pos < (page_height - 60):
-                        if any(term in texto_bruto.upper() for term in ["CODIGO", "PECAS", "DESCRICAO", "LUBRIFICANTES", "QUANTIDADE"]):
+                    # Filtro específico para a coluna de códigos deste modelo de PDF (coluna da esquerda, x0 < 100)
+                    # E ignorando o cabeçalho superior
+                    if x0 <= 120 and y_pos < (page_height - 130):
+                        if any(term in texto_bruto.upper() for term in ["CODIGO", "PEÇAS", "PECAS", "DESCRIÇÃO", "DESCRICAO", "NCM", "QTDE"]):
                             continue
 
                         cod_limpo = extrair_codigo_inteligente(texto_bruto, tipo)
 
                         if len(cod_limpo) >= 2:
-                            if cod_limpo in mapa_sol:
-                                raw_sol = mapa_sol[cod_limpo]
+                            # Tenta encontrar correspondência exata ou parcial na base
+                            raw_sol = mapa_sol.get(cod_limpo)
+                            
+                            # Se não achar direto, tenta buscar sem hífens/pontos se houver variação
+                            if not raw_sol:
+                                for k, v in mapa_sol.items():
+                                    if k == cod_limpo or k.replace("-", "") == cod_limpo.replace("-", ""):
+                                        raw_sol = v
+                                        break
+
+                            if raw_sol:
                                 descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
                                 cod_sol = f"SOL-{raw_sol}" if not raw_sol.startswith("SOL") else raw_sol
 
@@ -119,18 +129,19 @@ async def escrever_no_pdf_original(
                                         "descricao": descricao
                                     })
 
-                                # Escreve o código SOL convertido em cima/frente do original
+                                # Escreve o código SOL logo à frente do código original
                                 x_escrita = x1 + 4
                                 can.setFillColor(colors.white)
-                                can.rect(x_escrita - 1, y_pos - 1, 52, 9, fill=1, stroke=0)
+                                can.rect(x_escrita - 1, y_pos - 1, 55, 9, fill=1, stroke=0)
                                 
                                 can.setFont("Helvetica-Bold", 6.5)
                                 can.setFillColor(colors.HexColor("#0284c7"))
                                 can.drawString(x_escrita, y_pos, cod_sol)
                                 escreveu_algo = True
+                                print(f"-> CONVERTIDO E ESCRITO: {texto_bruto} -> {cod_sol}")
 
-                            elif cod_limpo not in codigos_processados and len(cod_limpo) >= 4:
-                                # Opcional: registra itens não encontrados que pareçam códigos relevantes
+                            elif len(cod_limpo) >= 4 and cod_limpo not in codigos_processados:
+                                # Registra como não encontrado para aparecer na tabela com status de atenção
                                 codigos_processados.add(cod_limpo)
                                 itens_encontrados.append({
                                     "status": "Não encontrado",
@@ -159,8 +170,6 @@ async def escrever_no_pdf_original(
             "itens": itens_encontrados
         }
 
-    except HTTPException as http_exc:
-        raise http_exc
     except Exception as e:
         tb = traceback.format_exc()
         print(f"CRITICAL ERROR: {tb}")
