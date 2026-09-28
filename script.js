@@ -32,7 +32,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const progressText = document.getElementById("progressText");
 
     // ENDPOINT OFICIAL NO RAILWAY
-    const API_ENDPOINT = 'conversor-pcm-ust-production-4afc.up.railway.app';
+    const API_ENDPOINT = 'https://conversor-pcm-ust-production-4afc.up.railway.app/';
 
     function formatBytes(bytes) {
         if (bytes === 0) return '0 Bytes';
