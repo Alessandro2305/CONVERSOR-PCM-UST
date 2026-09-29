@@ -5,25 +5,22 @@ import base64
 import io
 import os
 import re
-import pandas as pd
+import unicodedata
+from collections import defaultdict
 
+import pandas as pd
 from pypdf import PdfReader, PdfWriter
 
 
 # ============================================================
-# CONFIGURAÇÃO DA API
+# CONFIGURAÇÃO
 # ============================================================
 
 app = FastAPI(
     title="Conversor PCM UST",
-    description="Sistema de conversão de códigos PDF x SOL",
-    version="1.0.0"
+    description="Conversor de código original para Código Item (SOL)",
+    version="1.1.0"
 )
-
-
-# ============================================================
-# CORS
-# ============================================================
 
 app.add_middleware(
     CORSMiddleware,
@@ -35,453 +32,377 @@ app.add_middleware(
 
 
 # ============================================================
-# FUNÇÕES AUXILIARES
+# NORMALIZAÇÃO
 # ============================================================
 
-def normalizar_texto(valor):
-    """
-    Normaliza valores vindos do Excel.
-    """
-
+def normalizar(valor):
+    """Converte um valor para texto comparável."""
     if valor is None:
         return ""
 
-    if pd.isna(valor):
-        return ""
+    try:
+        if pd.isna(valor):
+            return ""
+    except Exception:
+        pass
 
-    texto = str(valor).strip()
+    texto = str(valor).strip().upper()
 
-    # Remove .0 de números vindos do Excel
-    if texto.endswith(".0"):
-        texto = texto[:-2]
+    # Remove acentos
+    texto = unicodedata.normalize("NFKD", texto)
+    texto = "".join(
+        c for c in texto
+        if not unicodedata.combining(c)
+    )
+
+    # Mantém somente letras e números
+    texto = re.sub(r"[^A-Z0-9]", "", texto)
 
     return texto
 
 
-def normalizar_codigo(valor):
-    """
-    Normaliza códigos para facilitar o cruzamento.
-    """
-
-    texto = normalizar_texto(valor)
-
-    if not texto:
+def texto_limpo(valor):
+    """Texto normal sem alterar acentos."""
+    if valor is None:
         return ""
-
-    texto = texto.upper()
-
-    # Remove espaços extras
-    texto = re.sub(r"\s+", "", texto)
-
-    return texto
-
-
-def encontrar_coluna(df, possibilidades):
-    """
-    Procura uma coluna no Excel utilizando várias possibilidades.
-    """
-
-    mapa = {}
-
-    for coluna in df.columns:
-        nome = str(coluna).strip().upper()
-
-        # Remove acentos simples
-        nome = (
-            nome.replace("Á", "A")
-            .replace("À", "A")
-            .replace("Ã", "A")
-            .replace("Â", "A")
-            .replace("É", "E")
-            .replace("Ê", "E")
-            .replace("Í", "I")
-            .replace("Ó", "O")
-            .replace("Ô", "O")
-            .replace("Õ", "O")
-            .replace("Ú", "U")
-            .replace("Ç", "C")
-        )
-
-        nome = re.sub(r"[^A-Z0-9]", "", nome)
-
-        mapa[nome] = coluna
-
-    for possibilidade in possibilidades:
-
-        nome = possibilidade.upper()
-
-        nome = (
-            nome.replace("Á", "A")
-            .replace("À", "A")
-            .replace("Ã", "A")
-            .replace("Â", "A")
-            .replace("É", "E")
-            .replace("Ê", "E")
-            .replace("Í", "I")
-            .replace("Ó", "O")
-            .replace("Ô", "O")
-            .replace("Õ", "O")
-            .replace("Ú", "U")
-            .replace("Ç", "C")
-        )
-
-        nome = re.sub(r"[^A-Z0-9]", "", nome)
-
-        if nome in mapa:
-            return mapa[nome]
-
-    return None
-
-
-def localizar_colunas_excel(df):
-    """
-    Identifica automaticamente as principais colunas da planilha.
-    """
-
-    coluna_original = encontrar_coluna(
-        df,
-        [
-            "CODIGO_ORIGINAL",
-            "CÓDIGO_ORIGINAL",
-            "CODIGO ORIGINAL",
-            "CÓDIGO ORIGINAL",
-            "CODIGO",
-            "CÓDIGO",
-            "COD",
-            "ITEM",
-            "PART_NUMBER",
-            "PARTNUMBER",
-            "PN",
-        ]
-    )
-
-    coluna_sol = encontrar_coluna(
-        df,
-        [
-            "CODIGO_SOL",
-            "CÓDIGO_SOL",
-            "CODIGO SOL",
-            "CÓDIGO SOL",
-            "SOL",
-            "COD_SOL",
-            "CÓDIGO INTERNO",
-            "CODIGO INTERNO",
-            "CODIGO_CONVERTIDO",
-            "CÓDIGO_CONVERTIDO",
-        ]
-    )
-
-    coluna_descricao = encontrar_coluna(
-        df,
-        [
-            "DESCRICAO",
-            "DESCRIÇÃO",
-            "DESCRICAO DO ITEM",
-            "DESCRIÇÃO DO ITEM",
-            "DESCRIÇÃO ITEM",
-            "ITEM DESCRICAO",
-            "NOME",
-            "MATERIAL",
-        ]
-    )
-
-    return coluna_original, coluna_sol, coluna_descricao
-
-
-def extrair_texto_pdf(pdf_bytes):
-    """
-    Extrai todo o texto do PDF.
-    """
 
     try:
+        if pd.isna(valor):
+            return ""
+    except Exception:
+        pass
 
+    return str(valor).strip()
+
+
+# ============================================================
+# EXCEL
+# ============================================================
+
+def ler_planilha(excel_bytes):
+    try:
+        df = pd.read_excel(io.BytesIO(excel_bytes))
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Erro ao abrir a planilha Excel: {e}"
+        )
+
+    if df.empty:
+        raise HTTPException(
+            status_code=400,
+            detail="A planilha Excel está vazia."
+        )
+
+    return df
+
+
+def validar_planilha_pcm(df):
+    """
+    A planilha real enviada pelo usuário possui:
+      Código Item
+      Descrição
+      Grupo
+      Subgrupo
+      Familia de Compra
+      Codigo Marca
+      Marca
+      Referencia
+      Homologado
+
+    Para o conversor:
+      Referencia  = código original
+      Código Item = código SOL / código interno
+      Descrição   = descrição do item
+    """
+
+    colunas = {
+        "codigo_item": None,
+        "referencia": None,
+        "descricao": None,
+    }
+
+    for coluna in df.columns:
+        nome = normalizar(coluna)
+
+        if nome == "CODIGOITEM":
+            colunas["codigo_item"] = coluna
+
+        elif nome == "REFERENCIA":
+            colunas["referencia"] = coluna
+
+        elif nome == "DESCRICAO":
+            colunas["descricao"] = coluna
+
+    faltando = [
+        chave
+        for chave, coluna in colunas.items()
+        if coluna is None
+    ]
+
+    if faltando:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "A planilha não possui as colunas necessárias. "
+                "Para esta planilha são esperadas: "
+                "'Código Item', 'Referencia' e 'Descrição'. "
+                f"Faltando: {', '.join(faltando)}."
+            )
+        )
+
+    return colunas
+
+
+def montar_indice(df, colunas):
+    """
+    Cria:
+      referencia normalizada -> lista de registros
+
+    A lista é importante porque existem referências duplicadas
+    na planilha. Quando uma referência aponta para mais de um
+    Código Item, o resultado fica Pendente em vez de escolher
+    um código incorretamente.
+    """
+
+    indice = defaultdict(list)
+
+    coluna_codigo = colunas["codigo_item"]
+    coluna_ref = colunas["referencia"]
+    coluna_desc = colunas["descricao"]
+
+    for _, linha in df.iterrows():
+
+        referencia_original = texto_limpo(
+            linha[coluna_ref]
+        )
+
+        referencia_normalizada = normalizar(
+            referencia_original
+        )
+
+        if not referencia_normalizada:
+            continue
+
+        codigo_item = texto_limpo(
+            linha[coluna_codigo]
+        )
+
+        # Corrige códigos que o Excel transforma em 123.0
+        if codigo_item.endswith(".0"):
+            codigo_item = codigo_item[:-2]
+
+        descricao = texto_limpo(
+            linha[coluna_desc]
+        )
+
+        registro = {
+            "codigo_item": codigo_item,
+            "referencia": referencia_original,
+            "descricao": descricao,
+        }
+
+        # Evita duplicar exatamente o mesmo registro
+        if registro not in indice[referencia_normalizada]:
+            indice[referencia_normalizada].append(registro)
+
+    return indice
+
+
+# ============================================================
+# PDF
+# ============================================================
+
+def extrair_texto_pdf(pdf_bytes):
+    try:
         reader = PdfReader(io.BytesIO(pdf_bytes))
 
         paginas = []
 
         for pagina in reader.pages:
+            texto = pagina.extract_text() or ""
+            paginas.append(texto)
 
-            texto = pagina.extract_text()
+        texto = "\n".join(paginas)
 
-            if texto:
-                paginas.append(texto)
+        if not texto.strip():
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "O PDF não possui texto extraível. "
+                    "Se o PDF for escaneado como imagem, será necessário "
+                    "adicionar OCR."
+                )
+            )
 
-        return "\n".join(paginas)
+        return texto
+
+    except HTTPException:
+        raise
 
     except Exception as e:
-
         raise HTTPException(
             status_code=400,
-            detail=f"Não foi possível ler o PDF: {str(e)}"
+            detail=f"Erro ao ler o PDF: {e}"
         )
 
 
-def extrair_codigos_do_pdf(texto):
+def gerar_candidatos_pdf(texto):
     """
-    Identifica possíveis códigos dentro do PDF.
+    Extrai candidatos do texto do PDF.
 
-    A função procura códigos alfanuméricos e numéricos.
+    Em vez de considerar qualquer palavra do PDF como código,
+    procuramos tokens alfanuméricos e também combinações de
+    tokens próximos. Isso permite referências como:
+
+      712111
+      DRT3500
+      44952002
+      UG000804 - 70438
+      1 410 101 610
+      000.090.15.51
     """
 
-    if not texto:
-        return []
+    tokens = re.findall(
+        r"[A-Za-z0-9]+",
+        texto.upper()
+    )
 
-    encontrados = []
+    candidatos = []
+    vistos = set()
 
-    linhas = texto.splitlines()
+    # Tokens individuais
+    for token in tokens:
+        normalizado = normalizar(token)
 
-    for linha in linhas:
-
-        linha = linha.strip()
-
-        if not linha:
+        if len(normalizado) < 3:
             continue
 
-        # ----------------------------------------------------
-        # Procura códigos com letras/números
-        # Exemplos:
-        # ABC-123
-        # 12345
-        # 10.123.456
-        # AB12345
-        # ----------------------------------------------------
+        if normalizado not in vistos:
+            vistos.add(normalizado)
+            candidatos.append((normalizado, token))
 
-        tokens = re.findall(
-            r"\b[A-Z0-9][A-Z0-9._/-]{2,}\b",
-            linha.upper()
-        )
+    # Combinações de até 6 tokens consecutivos.
+    # Útil para referências separadas por espaço/hífen.
+    limite = min(6, len(tokens))
 
-        for token in tokens:
+    for tamanho in range(2, limite + 1):
 
-            token = token.strip(".,;:()[]{}")
+        for i in range(len(tokens) - tamanho + 1):
 
-            if len(token) < 3:
+            partes = tokens[i:i + tamanho]
+
+            combinado = normalizar(
+                "".join(partes)
+            )
+
+            if len(combinado) < 4:
                 continue
 
-            # Ignora palavras comuns
-            palavras_ignoradas = {
-                "ITEM",
-                "TOTAL",
-                "DATA",
-                "HORA",
-                "STATUS",
-                "CODIGO",
-                "CÓDIGO",
-                "DESCRICAO",
-                "DESCRIÇÃO",
-                "QUANTIDADE",
-                "UNIDADE",
-                "PAGINA",
-                "PÁGINA",
-                "SOL",
-            }
+            if combinado not in vistos:
+                vistos.add(combinado)
+                candidatos.append(
+                    (
+                        combinado,
+                        " ".join(partes)
+                    )
+                )
 
-            if token in palavras_ignoradas:
-                continue
-
-            encontrados.append(token)
-
-    # Remove duplicados preservando ordem
-    resultado = list(dict.fromkeys(encontrados))
-
-    return resultado
+    return candidatos
 
 
-def criar_pdf_saida(pdf_bytes):
+def encontrar_referencias_no_pdf(texto, indice):
     """
-    Cria uma cópia válida do PDF original.
+    Cruza os candidatos extraídos do PDF com as referências
+    existentes no Excel.
+
+    Retorna somente códigos que realmente existem no Excel.
     """
 
+    candidatos = gerar_candidatos_pdf(texto)
+
+    encontrados = []
+    vistos = set()
+
+    conjunto_referencias = set(indice.keys())
+
+    for normalizado, original in candidatos:
+
+        if normalizado not in conjunto_referencias:
+            continue
+
+        if normalizado in vistos:
+            continue
+
+        vistos.add(normalizado)
+
+        encontrados.append({
+            "normalizado": normalizado,
+            "codigo_original": original
+        })
+
+    return encontrados
+
+
+# ============================================================
+# PDF DE SAÍDA
+# ============================================================
+
+def copiar_pdf(pdf_bytes):
     try:
-
         reader = PdfReader(io.BytesIO(pdf_bytes))
-
         writer = PdfWriter()
 
         for pagina in reader.pages:
             writer.add_page(pagina)
 
         saida = io.BytesIO()
-
         writer.write(saida)
 
-        saida.seek(0)
-
-        return saida.read()
+        return saida.getvalue()
 
     except Exception as e:
-
         raise HTTPException(
             status_code=500,
-            detail=f"Erro ao gerar PDF de saída: {str(e)}"
+            detail=f"Erro ao gerar PDF de saída: {e}"
         )
 
 
-def pdf_para_base64(pdf_bytes):
-    """
-    Converte PDF para Base64.
-    """
-
+def pdf_base64(pdf_bytes):
     return base64.b64encode(pdf_bytes).decode("utf-8")
 
 
-def montar_indice_excel(df, coluna_original, coluna_sol, coluna_descricao):
-    """
-    Cria um índice rápido para localizar códigos.
-    """
+# ============================================================
+# PROCESSAMENTO
+# ============================================================
 
-    indice = {}
+def processar(pdf_bytes, excel_bytes, tipo="principal"):
 
-    for _, linha in df.iterrows():
+    # --------------------------------------------------------
+    # Excel
+    # --------------------------------------------------------
 
-        codigo_original = normalizar_codigo(
-            linha[coluna_original]
-        )
+    df = ler_planilha(excel_bytes)
 
-        codigo_sol = normalizar_texto(
-            linha[coluna_sol]
-        )
+    colunas = validar_planilha_pcm(df)
 
-        descricao = normalizar_texto(
-            linha[coluna_descricao]
-        )
-
-        if not codigo_original:
-            continue
-
-        indice[codigo_original] = {
-            "codigo_convertido": codigo_sol,
-            "descricao": descricao
-        }
-
-    return indice
-
-
-def processar_conversao(pdf_bytes, excel_bytes, tipo="principal"):
-    """
-    Processo principal de conversão.
-    """
-
-    # ========================================================
-    # 1. LER EXCEL
-    # ========================================================
-
-    try:
-
-        df = pd.read_excel(
-            io.BytesIO(excel_bytes)
-        )
-
-    except Exception as e:
-
-        raise HTTPException(
-            status_code=400,
-            detail=f"Erro ao abrir a planilha Excel: {str(e)}"
-        )
-
-    if df.empty:
-
-        raise HTTPException(
-            status_code=400,
-            detail="A planilha Excel está vazia."
-        )
-
-
-    # ========================================================
-    # 2. IDENTIFICAR COLUNAS
-    # ========================================================
-
-    (
-        coluna_original,
-        coluna_sol,
-        coluna_descricao
-    ) = localizar_colunas_excel(df)
-
-
-    if not coluna_original:
-
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Não encontrei a coluna do código original na planilha. "
-                "Use uma coluna como CODIGO, CÓDIGO ORIGINAL ou CODIGO_ORIGINAL."
-            )
-        )
-
-
-    if not coluna_sol:
-
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Não encontrei a coluna do código SOL na planilha. "
-                "Use uma coluna como SOL, CODIGO SOL ou CODIGO_SOL."
-            )
-        )
-
-
-    if not coluna_descricao:
-
-        # Se não existir descrição, cria uma coluna virtual
-        df["DESCRICAO"] = ""
-
-        coluna_descricao = "DESCRICAO"
-
-
-    # ========================================================
-    # 3. CRIAR ÍNDICE
-    # ========================================================
-
-    indice = montar_indice_excel(
+    indice = montar_indice(
         df,
-        coluna_original,
-        coluna_sol,
-        coluna_descricao
+        colunas
     )
 
-
-    # ========================================================
-    # 4. LER PDF
-    # ========================================================
+    # --------------------------------------------------------
+    # PDF
+    # --------------------------------------------------------
 
     texto_pdf = extrair_texto_pdf(
         pdf_bytes
     )
 
-
-    # ========================================================
-    # 5. EXTRAIR CÓDIGOS
-    # ========================================================
-
-    codigos_pdf = extrair_codigos_do_pdf(
-        texto_pdf
+    referencias = encontrar_referencias_no_pdf(
+        texto_pdf,
+        indice
     )
-
-
-    # ========================================================
-    # 6. SE NÃO ENCONTROU CÓDIGOS
-    # ========================================================
-
-    if not codigos_pdf:
-
-        return {
-            "total": 0,
-            "convertidos": 0,
-            "pendentes": 0,
-            "nao_encontrados": 0,
-            "itens": [],
-            "mensagem": (
-                "Nenhum código foi identificado no PDF."
-            ),
-            "pdf_base64": pdf_para_base64(
-                criar_pdf_saida(pdf_bytes)
-            )
-        }
-
-
-    # ========================================================
-    # 7. CRUZAR PDF X EXCEL
-    # ========================================================
 
     itens = []
 
@@ -489,105 +410,107 @@ def processar_conversao(pdf_bytes, excel_bytes, tipo="principal"):
     pendentes = 0
     nao_encontrados = 0
 
+    # --------------------------------------------------------
+    # Cruzamento
+    # --------------------------------------------------------
 
-    for codigo in codigos_pdf:
+    for referencia in referencias:
 
-        codigo_normalizado = normalizar_codigo(
-            codigo
+        chave = referencia["normalizado"]
+        codigo_original = referencia["codigo_original"]
+
+        registros = indice.get(
+            chave,
+            []
         )
 
+        if not registros:
+            nao_encontrados += 1
+
+            itens.append({
+                "status": "Não encontrado",
+                "codigo_original": codigo_original,
+                "codigo_convertido": "",
+                "descricao": ""
+            })
+
+            continue
+
+        # Remove códigos SOL duplicados
+        codigos = list({
+            r["codigo_item"]
+            for r in registros
+            if r["codigo_item"]
+        })
 
         # ----------------------------------------------------
-        # ENCONTRADO
+        # UMA REFERÊNCIA -> UM CÓDIGO SOL
         # ----------------------------------------------------
 
-        if codigo_normalizado in indice:
+        if len(codigos) == 1:
 
-            registro = indice[
-                codigo_normalizado
-            ]
-
-            codigo_convertido = registro[
-                "codigo_convertido"
-            ]
-
-            descricao = registro[
-                "descricao"
-            ]
-
-
-            if codigo_convertido:
-
-                status = "Convertido"
-
-                convertidos += 1
-
-            else:
-
-                status = "Pendente"
-
-                pendentes += 1
-
-
-            itens.append(
-                {
-                    "status": status,
-                    "codigo_original": codigo,
-                    "codigo_convertido": codigo_convertido,
-                    "descricao": descricao
-                }
+            registro = next(
+                r for r in registros
+                if r["codigo_item"] == codigos[0]
             )
+
+            convertidos += 1
+
+            itens.append({
+                "status": "Convertido",
+                "codigo_original": codigo_original,
+                "codigo_convertido": codigos[0],
+                "descricao": registro["descricao"]
+            })
+
+        # ----------------------------------------------------
+        # UMA REFERÊNCIA -> VÁRIOS CÓDIGOS
+        # ----------------------------------------------------
 
         else:
 
-            # ------------------------------------------------
-            # NÃO ENCONTRADO
-            # ------------------------------------------------
+            pendentes += 1
 
-            nao_encontrados += 1
+            descricoes = list({
+                r["descricao"]
+                for r in registros
+                if r["descricao"]
+            })
 
-            itens.append(
-                {
-                    "status": "Não encontrado",
-                    "codigo_original": codigo,
-                    "codigo_convertido": "",
-                    "descricao": "Código não encontrado na planilha"
-                }
-            )
+            itens.append({
+                "status": "Pendente",
+                "codigo_original": codigo_original,
+                "codigo_convertido": " / ".join(codigos),
+                "descricao": (
+                    "Referência encontrada em mais de um item. "
+                    + " | ".join(descricoes[:3])
+                )
+            })
 
+    # --------------------------------------------------------
+    # PDF de saída
+    # --------------------------------------------------------
 
-    # ========================================================
-    # 8. GERAR PDF
-    # ========================================================
-
-    pdf_saida = criar_pdf_saida(
+    pdf_saida = copiar_pdf(
         pdf_bytes
     )
 
+    # --------------------------------------------------------
+    # Resultado
+    # --------------------------------------------------------
 
-    # ========================================================
-    # 9. RESULTADO
-    # ========================================================
-
-    resultado = {
-
+    return {
         "total": len(itens),
-
         "convertidos": convertidos,
-
         "pendentes": pendentes,
-
         "nao_encontrados": nao_encontrados,
-
         "itens": itens,
-
-        "pdf_base64": pdf_para_base64(
-            pdf_saida
+        "pdf_base64": pdf_base64(pdf_saida),
+        "observacao": (
+            "Código Item foi utilizado como código SOL e "
+            "Referencia foi utilizada como código original."
         )
     }
-
-
-    return resultado
 
 
 # ============================================================
@@ -602,76 +525,52 @@ async def converter_principal(
 
     try:
 
-        # ----------------------------------------------------
-        # Validar PDF
-        # ----------------------------------------------------
-
         if not file_pdf.filename.lower().endswith(".pdf"):
-
             raise HTTPException(
                 status_code=400,
-                detail="O arquivo enviado não é um PDF válido."
+                detail="O arquivo do documento precisa ser PDF."
             )
 
-
-        # ----------------------------------------------------
-        # Validar Excel
-        # ----------------------------------------------------
-
-        extensao_excel = file_excel.filename.lower()
-
-        if not (
-            extensao_excel.endswith(".xlsx")
-            or extensao_excel.endswith(".xls")
+        if not file_excel.filename.lower().endswith(
+            (".xlsx", ".xls")
         ):
-
             raise HTTPException(
                 status_code=400,
-                detail="A planilha deve ser .xlsx ou .xls."
+                detail="A planilha precisa ser .xlsx ou .xls."
             )
-
 
         pdf_bytes = await file_pdf.read()
-
         excel_bytes = await file_excel.read()
 
-
         if not pdf_bytes:
-
             raise HTTPException(
                 status_code=400,
                 detail="O PDF está vazio."
             )
 
-
         if not excel_bytes:
-
             raise HTTPException(
                 status_code=400,
                 detail="A planilha está vazia."
             )
 
-
-        resultado = processar_conversao(
+        resultado = processar(
             pdf_bytes,
             excel_bytes,
             tipo="principal"
         )
 
-
         return JSONResponse(
             content=resultado
         )
-
 
     except HTTPException:
         raise
 
     except Exception as e:
-
         raise HTTPException(
             status_code=500,
-            detail=f"Erro interno no conversor principal: {str(e)}"
+            detail=f"Erro no conversor principal: {e}"
         )
 
 
@@ -687,96 +586,70 @@ async def converter_cnh(
 
     try:
 
-        # ----------------------------------------------------
-        # Validar PDF
-        # ----------------------------------------------------
-
         if not file_pdf.filename.lower().endswith(".pdf"):
-
             raise HTTPException(
                 status_code=400,
-                detail="O arquivo enviado não é um PDF válido."
+                detail="O arquivo do documento precisa ser PDF."
             )
 
-
-        # ----------------------------------------------------
-        # Validar Excel
-        # ----------------------------------------------------
-
-        extensao_excel = file_excel.filename.lower()
-
-        if not (
-            extensao_excel.endswith(".xlsx")
-            or extensao_excel.endswith(".xls")
+        if not file_excel.filename.lower().endswith(
+            (".xlsx", ".xls")
         ):
-
             raise HTTPException(
                 status_code=400,
-                detail="A planilha deve ser .xlsx ou .xls."
+                detail="A planilha precisa ser .xlsx ou .xls."
             )
-
 
         pdf_bytes = await file_pdf.read()
-
         excel_bytes = await file_excel.read()
 
-
         if not pdf_bytes:
-
             raise HTTPException(
                 status_code=400,
                 detail="O PDF está vazio."
             )
 
-
         if not excel_bytes:
-
             raise HTTPException(
                 status_code=400,
                 detail="A planilha está vazia."
             )
 
-
-        resultado = processar_conversao(
+        resultado = processar(
             pdf_bytes,
             excel_bytes,
             tipo="cnh"
         )
 
-
         return JSONResponse(
             content=resultado
         )
-
 
     except HTTPException:
         raise
 
     except Exception as e:
-
         raise HTTPException(
             status_code=500,
-            detail=f"Erro interno no conversor CNH: {str(e)}"
+            detail=f"Erro no conversor CNH: {e}"
         )
 
 
 # ============================================================
-# ROTA DE TESTE
+# TESTES
 # ============================================================
 
 @app.get("/")
 def inicio():
-
     return {
         "sistema": "Conversor PCM UST",
         "status": "online",
-        "versao": "1.0.0"
+        "versao": "1.1.0"
     }
 
 
 @app.get("/health")
 def health():
-
     return {
         "status": "ok"
     }
