@@ -1,11 +1,69 @@
 document.addEventListener("DOMContentLoaded", () => {
-    // URL do seu Back-end no Railway com HTTPS
     const API_URL = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" 
         ? "http://localhost:8000" 
         : "https://conversor-pcm-ust-production-8a82.up.railway.app";
 
     // ----------------------------------------------------
-    // ABA 1: CONVERSOR PRINCIPAL
+    // 1. NAVEGAÇÃO DO MENU LATERAL (ABAS)
+    // ----------------------------------------------------
+    const menuLinks = document.querySelectorAll(".sidebar-menu a, aside a, .menu-item");
+    
+    menuLinks.forEach(link => {
+        link.addEventListener("click", (e) => {
+            const href = link.getAttribute("href");
+            // Se o link for um link interno ou tiver comportamento de aba
+            if (href && href.startsWith("#")) {
+                e.preventDefault();
+                
+                // Remove active de todos os links do menu
+                menuLinks.forEach(l => l.classList.remove("active", "selected"));
+                link.classList.add("active");
+
+                // Oculta todas as seções de conteúdo e exibe a selecionada
+                const targetSecao = document.querySelector(href);
+                if (targetSecao) {
+                    document.querySelectorAll(".conteudo-secao, section[id]").forEach(sec => {
+                        sec.style.display = "none";
+                    });
+                    targetSecao.style.display = "block";
+                }
+            }
+        });
+    });
+
+    // ----------------------------------------------------
+    // 2. VINCULAÇÃO DOS CARDS VISUAIS AOS INPUTS DE ARQUIVO
+    // ----------------------------------------------------
+    function setupUploadTrigger(cardId, inputId, labelId) {
+        const card = document.getElementById(cardId);
+        const input = document.getElementById(inputId);
+        const label = document.getElementById(labelId);
+
+        if (card && input) {
+            card.addEventListener("click", () => input.click());
+
+            input.addEventListener("change", (e) => {
+                const file = e.target.files[0];
+                if (file && label) {
+                    label.textContent = file.name;
+                    label.style.color = "#0284c7";
+                    label.style.fontWeight = "bold";
+                }
+            });
+        }
+    }
+
+    // Configura os seletores do Conversor Principal
+    setupUploadTrigger("cardPdfPrincipal", "pdfInput", "nomePdfPrincipal");
+    setupUploadTrigger("cardExcelPrincipal", "excelInput", "nomeExcelPrincipal");
+
+    // Configura os seletores do Conversor CNH
+    setupUploadTrigger("cardPdfCNH", "pdfInputCNH", "nomePdfCNH");
+    setupUploadTrigger("cardExcelCNH", "excelInputCNH", "nomeExcelCNH");
+
+
+    // ----------------------------------------------------
+    // 3. PROCESSAMENTO - CONVERSOR PRINCIPAL
     // ----------------------------------------------------
     const btnProcessarPrincipal = document.getElementById("btnProcessar");
     
@@ -23,6 +81,7 @@ document.addEventListener("DOMContentLoaded", () => {
         formData.append("file_excel", fileExcel);
 
         btnProcessarPrincipal.disabled = true;
+        btnProcessarPrincipal.textContent = "A processar...";
         
         try {
             const response = await fetch(`${API_URL}/converter/principal`, {
@@ -48,12 +107,13 @@ document.addEventListener("DOMContentLoaded", () => {
             alert(`Falha: ${error.message}`);
         } finally {
             btnProcessarPrincipal.disabled = false;
+            btnProcessarPrincipal.textContent = "PROCESSAR ARQUIVOS";
         }
     });
 
 
     // ----------------------------------------------------
-    // ABA 2: CONVERSOR CNH
+    // 4. PROCESSAMENTO - CONVERSOR CNH
     // ----------------------------------------------------
     const btnProcessarCNH = document.getElementById("btnProcessarCNH");
 
@@ -71,6 +131,7 @@ document.addEventListener("DOMContentLoaded", () => {
         formData.append("file_excel", fileExcel);
 
         btnProcessarCNH.disabled = true;
+        btnProcessarCNH.textContent = "A processar...";
 
         try {
             const response = await fetch(`${API_URL}/converter/cnh`, {
@@ -96,12 +157,13 @@ document.addEventListener("DOMContentLoaded", () => {
             alert(`Falha: ${error.message}`);
         } finally {
             btnProcessarCNH.disabled = false;
+            btnProcessarCNH.textContent = "PROCESSAR ARQUIVOS";
         }
     });
 
 
     // ----------------------------------------------------
-    // FUNÇÕES AUXILIARES
+    // FUNÇÕES AUXILIARES DE RENDERIZAÇÃO
     // ----------------------------------------------------
     function converterBase64ParaDownload(base64Data, nomeArquivo) {
         const byteCharacters = atob(base64Data);
