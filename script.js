@@ -1,4 +1,9 @@
 document.addEventListener("DOMContentLoaded", () => {
+    // Detecta automaticamente se está local ou no Railway
+    const API_URL = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" 
+        ? "http://localhost:8000" 
+        : ""; // No Railway, usa rota relativa para o mesmo domínio
+
     // ----------------------------------------------------
     // ABA 1: CONVERSOR PRINCIPAL (Alfanumérico: Letras e Números)
     // ----------------------------------------------------
@@ -28,7 +33,7 @@ document.addEventListener("DOMContentLoaded", () => {
         atualizarProgresso(10, "Enviando arquivos para o Conversor Principal...", progressBarPrincipal, progressTextPrincipal, progressPercentPrincipal);
 
         try {
-            const response = await fetch("http://localhost:8000/converter/principal", {
+            const response = await fetch(`${API_URL}/converter/principal`, {
                 method: "POST",
                 body: formData
             });
@@ -94,7 +99,7 @@ document.addEventListener("DOMContentLoaded", () => {
         atualizarProgresso(10, "Enviando arquivos para o Conversor CNH...", progressBarCNH, progressTextCNH, progressPercentCNH);
 
         try {
-            const response = await fetch("http://localhost:8000/converter/cnh", {
+            const response = await fetch(`${API_URL}/converter/cnh`, {
                 method: "POST",
                 body: formData
             });
@@ -163,7 +168,6 @@ document.addEventListener("DOMContentLoaded", () => {
         const tbody = document.getElementById(prefixo === "CNH" ? "tabelaDadosCNH" : "tabelaDados");
         const contador = document.getElementById(prefixo === "CNH" ? "contadorItensCNH" : "contadorItens");
         
-        // Atualiza métricas dinâmicas na interface
         const elTotal = document.getElementById(prefixo === "CNH" ? "mTotalCNH" : "mTotal");
         const elConvertidos = document.getElementById(prefixo === "CNH" ? "mConvertidosCNH" : "mConvertidos");
         const elPendentes = document.getElementById(prefixo === "CNH" ? "mPendentesCNH" : "mPendentes");

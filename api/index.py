@@ -1,129 +1,120 @@
-from fastapi import APIRouter, File, HTTPException, UploadFile
-import os
-import re
-import pandas as pd
-from pypdf import PdfReader, PdfWriter 
 import base64
+import io
+import os
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import pandas as pd
+from pypdf import PdfReader, PdfWriter
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
 
-router = APIRouter()
+app = FastAPI()
 
-TEMP_DIR = "temp_output"
-os.makedirs(TEMP_DIR, exist_ok=True)
-
-def processar_pdf_com_regras(pdf_path: str, df_excel: pd.DataFrame, modo: str) -> str:
-    """
-    Processa o PDF aplicando a regra correspondente à aba.
-    modo == 'principal': busca códigos alfanuméricos (letras + números)
-    modo == 'cnh': ignora letras, buscando apenas padrões numéricos puros
-    """
-    reader = PdfReader(pdf_path)
-    writer = PdfWriter()
-
-    for page in reader.pages:
-        text = page.extract_text() or ""
-        
-        if modo == "principal":
-            codigos_encontrados = re.findall(r"\b[A-Z0-9]{4,}\b", text)
-        elif modo == "cnh":
-            codigos_encontrados = re.findall(r"\b\d{4,}\b", text)
-            
-        # Lógica de substituição do PDF entra aqui...
-        writer.add_page(page)
-
-    output_pdf_path = os.path.join(TEMP_DIR, f"convertido_{modo}.pdf")
-    with open(output_pdf_path, "wb") as output_file:
-        writer.write(output_file)
-
-    return output_pdf_path
+# Configuração de CORS para permitir requisições de qualquer origem (inclusive Railway)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
-@router.post("/converter/principal")
+@app.post("/converter/principal")
 async def converter_principal(
     file_pdf: UploadFile = File(...), file_excel: UploadFile = File(...)
 ):
-    try:
-        pdf_path = os.path.join(TEMP_DIR, file_pdf.filename)
-        excel_path = os.path.join(TEMP_DIR, file_excel.filename)
+  try:
+    pdf_bytes = await file_pdf.read()
+    excel_bytes = await file_excel.read()
 
-        with open(pdf_path, "wb") as buffer:
-            buffer.write(await file_pdf.read())
-        with open(excel_path, "wb") as buffer:
-            buffer.write(await file_excel.read())
+    # Leitura da planilha de conversão principal (Alfanumérico)
+    df_excel = pd.read_excel(io.BytesIO(excel_bytes))
 
-        df_excel = pd.read_excel(excel_path)
+    # Exemplo de lógica de processamento do PDF e cruzamento com o Excel
+    # (Substitua abaixo pela sua lógica real do CONVERSOR PCM UST)
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    writer = PdfWriter()
 
-        # Exemplo simulado de itens retornados para a tabela principal
-        itens_tabela = [
+    for page in reader.pages:
+      writer.add_page(page)
+
+    # Gerando o PDF modificado em memória para Base64
+    pdf_output = io.BytesIO()
+    writer.write(pdf_output)
+    pdf_output.seek(0)
+    pdf_base64 = base64.b64encode(pdf_output.read()).decode("utf-8")
+
+    # Mock/Estrutura de dados de retorno esperada pelo front-end
+    resultado = {
+        "total": 10,
+        "convertidos": 8,
+        "pendentes": 1,
+        "nao_encontrados": 1,
+        "itens": [
             {
                 "status": "Convertido",
-                "codigo_original": "ABC1234",
-                "codigo_convertido": "SOL9876",
-                "descricao": "Item Alfanumérico Exemplo",
+                "codigo_original": "ABC-123",
+                "codigo_convertido": "SOL-999",
+                "descricao": "Item Exemplo Alfanumérico",
             }
-        ]
+        ],
+        "pdf_base64": pdf_base64,
+    }
 
-        output_pdf_path = processar_pdf_com_regras(pdf_path, df_excel, modo="principal")
+    return JSONResponse(content=resultado)
 
-        with open(output_pdf_path, "rb") as f:
-            pdf_bytes = f.read()
-        pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
-
-        return {
-            "itens": itens_tabela,
-            "pdf_base64": pdf_base64,
-            "total": len(itens_tabela),
-            "convertidos": sum(1 for i in itens_tabela if i["status"] == "Convertido"),
-            "pendentes": 0,
-            "nao_encontrados": 0,
-        }
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Erro ao processar conversor principal: {str(e)}"
-        )
+  except Exception as e:
+    raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/converter/cnh")
+@app.post("/converter/cnh")
 async def converter_cnh(
     file_pdf: UploadFile = File(...), file_excel: UploadFile = File(...)
 ):
-    try:
-        pdf_path = os.path.join(TEMP_DIR, file_pdf.filename)
-        excel_path = os.path.join(TEMP_DIR, file_excel.filename)
+  try:
+    pdf_bytes = await file_pdf.read()
+    excel_bytes = await file_excel.read()
 
-        with open(pdf_path, "wb") as buffer:
-            buffer.write(await file_pdf.read())
-        with open(excel_path, "wb") as buffer:
-            buffer.write(await file_excel.read())
+    # Leitura da planilha para CNH (Apenas números)
+    df_excel = pd.read_excel(io.BytesIO(excel_bytes))
 
-        df_excel = pd.read_excel(excel_path)
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    writer = PdfWriter()
 
-        # Exemplo simulado de itens retornados para a tabela CNH (focado em números)
-        itens_tabela = [
+    for page in reader.pages:
+      writer.add_page(page)
+
+    pdf_output = io.BytesIO()
+    writer.write(pdf_output)
+    pdf_output.seek(0)
+    pdf_base64 = base64.b64encode(pdf_output.read()).decode("utf-8")
+
+    resultado = {
+        "total": 5,
+        "convertidos": 5,
+        "pendentes": 0,
+        "nao_encontrados": 0,
+        "itens": [
             {
                 "status": "Convertido",
-                "codigo_original": "56789",
-                "codigo_convertido": "SOL1234",
-                "descricao": "Item Numérico CNH Exemplo",
+                "codigo_original": "123456",
+                "codigo_convertido": "SOL-888",
+                "descricao": "Item Exemplo CNH (Apenas Números)",
             }
-        ]
+        ],
+        "pdf_base64": pdf_base64,
+    }
 
-        output_pdf_path = processar_pdf_com_regras(pdf_path, df_excel, modo="cnh")
+    return JSONResponse(content=resultado)
 
-        with open(output_pdf_path, "rb") as f:
-            pdf_bytes = f.read()
-        pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+  except Exception as e:
+    raise HTTPException(status_code=500, detail=str(e))
 
-        return {
-            "itens": itens_tabela,
-            "pdf_base64": pdf_base64,
-            "total": len(itens_tabela),
-            "convertidos": sum(1 for i in itens_tabela if i["status"] == "Convertido"),
-            "pendentes": 0,
-            "nao_encontrados": 0,
-        }
 
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Erro ao processar conversor CNH: {str(e)}"
-        )
+if __name__ == "__main__":
+  import uvicorn
+
+  port = int(os.environ.get("PORT", 8000))
+  uvicorn.run("main:app", host="0.0.0.0", port=port)
