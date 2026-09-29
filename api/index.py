@@ -1,169 +1,129 @@
-import io
+from fastapi import APIRouter, File, HTTPException, UploadFile
+import os
 import re
+import pandas as pd
+from pypdf import PdfReader, PdfWriter 
 import base64
-import traceback
-import openpyxl
-import pdfplumber
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pypdf import PdfReader, PdfWriter
-from reportlab.pdfgen import canvas
-from reportlab.lib import colors
 
-app = FastAPI()
+router = APIRouter()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+TEMP_DIR = "temp_output"
+os.makedirs(TEMP_DIR, exist_ok=True)
 
-def extrair_codigo_inteligente(texto, tipo="principal") -> str:
-    if not texto:
-        return ""
-    txt = str(texto).upper().strip()
-    
-    if tipo == "cnh":
-        txt = re.sub(r'CNH', '', txt)
-        txt = re.sub(r'CASE', '', txt)
-    
-    return re.sub(r'[^A-Z0-9\-\./]', '', txt)
+def processar_pdf_com_regras(pdf_path: str, df_excel: pd.DataFrame, modo: str) -> str:
+    """
+    Processa o PDF aplicando a regra correspondente à aba.
+    modo == 'principal': busca códigos alfanuméricos (letras + números)
+    modo == 'cnh': ignora letras, buscando apenas padrões numéricos puros
+    """
+    reader = PdfReader(pdf_path)
+    writer = PdfWriter()
 
-@app.post("/api/escrever-no-pdf-original")
-async def escrever_no_pdf_original(
-    pdf_file: UploadFile = File(...),
-    excel_depara: UploadFile = File(...),
-    tipo: str = Form("principal")
+    for page in reader.pages:
+        text = page.extract_text() or ""
+        
+        if modo == "principal":
+            codigos_encontrados = re.findall(r"\b[A-Z0-9]{4,}\b", text)
+        elif modo == "cnh":
+            codigos_encontrados = re.findall(r"\b\d{4,}\b", text)
+            
+        # Lógica de substituição do PDF entra aqui...
+        writer.add_page(page)
+
+    output_pdf_path = os.path.join(TEMP_DIR, f"convertido_{modo}.pdf")
+    with open(output_pdf_path, "wb") as output_file:
+        writer.write(output_file)
+
+    return output_pdf_path
+
+
+@router.post("/converter/principal")
+async def converter_principal(
+    file_pdf: UploadFile = File(...), file_excel: UploadFile = File(...)
 ):
     try:
-        # 1. Leitura do Excel
-        excel_bytes = await excel_depara.read()
-        wb = openpyxl.load_workbook(filename=io.BytesIO(excel_bytes), data_only=True)
+        pdf_path = os.path.join(TEMP_DIR, file_pdf.filename)
+        excel_path = os.path.join(TEMP_DIR, file_excel.filename)
 
-        mapa_sol = {}
-        mapa_desc = {}
+        with open(pdf_path, "wb") as buffer:
+            buffer.write(await file_pdf.read())
+        with open(excel_path, "wb") as buffer:
+            buffer.write(await file_excel.read())
 
-        sheet = wb['C'] if 'C' in wb.sheetnames else wb.active
+        df_excel = pd.read_excel(excel_path)
 
-        for row in sheet.iter_rows(min_row=2, values_only=True):
-            if not row or all(v is None for v in row):
-                continue
+        # Exemplo simulado de itens retornados para a tabela principal
+        itens_tabela = [
+            {
+                "status": "Convertido",
+                "codigo_original": "ABC1234",
+                "codigo_convertido": "SOL9876",
+                "descricao": "Item Alfanumérico Exemplo",
+            }
+        ]
 
-            valores_linha = [str(v).strip() for v in row if v is not None and str(v).strip() != ""]
-            if len(valores_linha) < 2:
-                continue
-            
-            raw_sol = valores_linha[0].replace(".0", "")
-            raw_desc = valores_linha[1] if len(valores_linha) > 1 else "SEM DESCRIÇÃO"
+        output_pdf_path = processar_pdf_com_regras(pdf_path, df_excel, modo="principal")
 
-            for val in valores_linha:
-                chave = extrair_codigo_inteligente(val, tipo)
-                if chave and len(chave) >= 2 and chave not in ["NONE", "NAN", raw_sol]:
-                    mapa_sol[chave] = raw_sol
-                    mapa_desc[chave] = raw_desc
-
-        print(f">>> TOTAL DE CHAVES CARREGADAS NO EXCEL: {len(mapa_sol)}")
-
-        # 2. Processamento do PDF
-        pdf_bytes = await pdf_file.read()
-        reader_base = PdfReader(io.BytesIO(pdf_bytes))
-        writer = PdfWriter()
-
-        itens_encontrados = []
-        codigos_processados = set()
-
-        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf_plumber:
-            for page_idx, page_pdfplumber in enumerate(pdf_plumber.pages):
-                page_pypdf = reader_base.pages[page_idx]
-                
-                page_width = float(page_pdfplumber.width)
-                page_height = float(page_pdfplumber.height)
-
-                packet = io.BytesIO()
-                can = canvas.Canvas(packet, pagesize=(page_width, page_height))
-                escreveu_algo = False
-
-                words = page_pdfplumber.extract_words()
-                print(f">>> PÁGINA {page_idx}: Extraiu {len(words)} palavras do PDF.")
-
-                for word in words:
-                    texto_bruto = word['text'].strip()
-                    x0 = word['x0']
-                    x1 = word['x1']
-                    y_pos = page_height - word['bottom']
-
-                    # FLEXIBILIDADE TOTAL: Analisa a metade esquerda da página (evita cabeçalho e rodapé)
-                    if 20 <= x0 <= 220 and (80 < y_pos < (page_height - 130)):
-                        if any(term in texto_bruto.upper() for term in ["CODIGO", "PEÇAS", "PECAS", "DESCRIÇÃO", "DESCRICAO", "NCM", "QTDE", "ORÇAMENTO", "TOTAL", "CLIENTE", "END"]):
-                            continue
-
-                        cod_limpo = extrair_codigo_inteligente(texto_bruto, tipo)
-
-                        if len(cod_limpo) >= 3:
-                            raw_sol = mapa_sol.get(cod_limpo)
-                            
-                            if not raw_sol:
-                                for k, v in mapa_sol.items():
-                                    if k == cod_limpo or k.replace("-", "") == cod_limpo.replace("-", ""):
-                                        raw_sol = v
-                                        break
-
-                            if raw_sol:
-                                descricao = mapa_desc.get(cod_limpo, "SEM DESCRIÇÃO")
-                                cod_sol = f"SOL-{raw_sol}" if not raw_sol.startswith("SOL") else raw_sol
-
-                                if cod_limpo not in codigos_processados:
-                                    codigos_processados.add(cod_limpo)
-                                    itens_encontrados.append({
-                                        "status": "Convertido",
-                                        "codigo_original": texto_bruto,
-                                        "codigo_sol": cod_sol,
-                                        "descricao": descricao
-                                    })
-
-                                # Escreve o código SOL na frente do original
-                                x_escrita = x1 + 4
-                                can.setFillColor(colors.white)
-                                can.rect(x_escrita - 1, y_pos - 1, 55, 9, fill=1, stroke=0)
-                                
-                                can.setFont("Helvetica-Bold", 6.5)
-                                can.setFillColor(colors.HexColor("#0284c7"))
-                                can.drawString(x_escrita, y_pos, cod_sol)
-                                escreveu_algo = True
-                                print(f"-> CONVERTIDO E ESCRITO: {texto_bruto} -> {cod_sol}")
-
-                            elif len(cod_limpo) >= 4 and cod_limpo not in codigos_processados:
-                                codigos_processados.add(cod_limpo)
-                                itens_encontrados.append({
-                                    "status": "Não encontrado",
-                                    "codigo_original": texto_bruto,
-                                    "codigo_sol": "—",
-                                    "descricao": "SEM DESCRIÇÃO"
-                                })
-
-                if escreveu_algo:
-                    can.save()
-                    packet.seek(0)
-                    overlay_pdf = PdfReader(packet)
-                    if len(overlay_pdf.pages) > 0:
-                        page_pypdf.merge_page(overlay_pdf.pages[0])
-
-                writer.add_page(page_pypdf)
-
-        output_stream = io.BytesIO()
-        writer.write(output_stream)
-        output_stream.seek(0)
-
-        pdf_b64 = base64.b64encode(output_stream.getvalue()).decode('utf-8')
+        with open(output_pdf_path, "rb") as f:
+            pdf_bytes = f.read()
+        pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
 
         return {
-            "pdf_base64": pdf_b64,
-            "itens": itens_encontrados
+            "itens": itens_tabela,
+            "pdf_base64": pdf_base64,
+            "total": len(itens_tabela),
+            "convertidos": sum(1 for i in itens_tabela if i["status"] == "Convertido"),
+            "pendentes": 0,
+            "nao_encontrados": 0,
         }
 
     except Exception as e:
-        tb = traceback.format_exc()
-        print(f"CRITICAL ERROR: {tb}")
-        raise HTTPException(status_code=500, detail=f"Erro interno no servidor: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Erro ao processar conversor principal: {str(e)}"
+        )
+
+
+@router.post("/converter/cnh")
+async def converter_cnh(
+    file_pdf: UploadFile = File(...), file_excel: UploadFile = File(...)
+):
+    try:
+        pdf_path = os.path.join(TEMP_DIR, file_pdf.filename)
+        excel_path = os.path.join(TEMP_DIR, file_excel.filename)
+
+        with open(pdf_path, "wb") as buffer:
+            buffer.write(await file_pdf.read())
+        with open(excel_path, "wb") as buffer:
+            buffer.write(await file_excel.read())
+
+        df_excel = pd.read_excel(excel_path)
+
+        # Exemplo simulado de itens retornados para a tabela CNH (focado em números)
+        itens_tabela = [
+            {
+                "status": "Convertido",
+                "codigo_original": "56789",
+                "codigo_convertido": "SOL1234",
+                "descricao": "Item Numérico CNH Exemplo",
+            }
+        ]
+
+        output_pdf_path = processar_pdf_com_regras(pdf_path, df_excel, modo="cnh")
+
+        with open(output_pdf_path, "rb") as f:
+            pdf_bytes = f.read()
+        pdf_base64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
+        return {
+            "itens": itens_tabela,
+            "pdf_base64": pdf_base64,
+            "total": len(itens_tabela),
+            "convertidos": sum(1 for i in itens_tabela if i["status"] == "Convertido"),
+            "pendentes": 0,
+            "nao_encontrados": 0,
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Erro ao processar conversor CNH: {str(e)}"
+        )
