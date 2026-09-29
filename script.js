@@ -5,7 +5,57 @@ document.addEventListener("DOMContentLoaded", () => {
         : "https://conversor-pcm-ust-production-8a82.up.railway.app";
 
     // ----------------------------------------------------
-    // ABA 1: CONVERSOR PRINCIPAL (Alfanumérico: Letras e Números)
+    // 1. LÓGICA DE NAVEGAÇÃO ENTRE ABAS (MENU LATERAL)
+    // ----------------------------------------------------
+    const menuLinks = document.querySelectorAll('.sidebar-menu a, .menu-item'); // Ajuste conforme suas classes do HTML
+    // Se preferir focar pelos IDs das seções de conteúdo, certifique-se que elas existem no HTML.
+    // Vamos mapear os itens do menu lateral padrão:
+    const sidebarLinks = document.querySelectorAll("aside a, .sidebar a");
+    
+    // Se houver seções de conteúdo separadas por ID (ex: #secao-principal, #secao-cnh)
+    sidebarLinks.forEach(link => {
+        link.addEventListener("click", (e) => {
+            const targetId = link.getAttribute("href");
+            if (targetId && targetId.startsWith("#")) {
+                e.preventDefault();
+                // Remove active de todos os links e oculta seções
+                sidebarLinks.forEach(l => l.parentElement.classList.remove("active"));
+                link.parentElement.classList.add("active");
+
+                // Alterna a visibilidade das abas principais se existirem no HTML
+                const targetSecao = document.querySelector(targetId);
+                if (targetSecao) {
+                    document.querySelectorAll(".conteudo-secao").forEach(sec => sec.style.display = "none");
+                    targetSecao.style.display = "block";
+                }
+            }
+        });
+    });
+
+    // ----------------------------------------------------
+    // 2. SELEÇÃO DE ARQUIVOS (CLIQUE NA CAIXA ABRE O INPUT FILE)
+    // ----------------------------------------------------
+    configurarCardUpload("pdfInput", "cardPdfPrincipal", "nomePdfPrincipal");
+    configurarCardUpload("excelInput", "cardExcelPrincipal", "nomeExcelPrincipal");
+    
+    configurarCardUpload("pdfInputCNH", "cardPdfCNH", "nomePdfCNH");
+    configurarCardUpload("excelInputCNH", "cardExcelCNH", "nomeExcelCNH");
+
+    function configurarCardUpload(inputId, cardId, labelId) {
+        const input = document.getElementById(inputId);
+        // Se o card não tiver ID específico, podemos buscar pelo input pai ou associar por clique
+        if (input) {
+            input.addEventListener("change", (e) => {
+                const fileName = e.target.files[0]?.name || "Selecione o arquivo...";
+                const label = document.getElementById(labelId);
+                if (label) label.textContent = fileName;
+            });
+        }
+    }
+
+
+    // ----------------------------------------------------
+    // ABA 1: CONVERSOR PRINCIPAL (Alfanumérico)
     // ----------------------------------------------------
     const pdfInputPrincipal = document.getElementById("pdfInput");
     const excelInputPrincipal = document.getElementById("excelInput");
@@ -46,13 +96,10 @@ document.addEventListener("DOMContentLoaded", () => {
             atualizarProgresso(70, "Processando dados e gerando tabela...", progressBarPrincipal, progressTextPrincipal, progressPercentPrincipal);
             
             const data = await response.json();
-
-            // 1. Preenche a tabela e as métricas principais na tela
             renderizarResultados(data, "");
 
             atualizarProgresso(90, "Gerando PDF convertido...", progressBarPrincipal, progressTextPrincipal, progressPercentPrincipal);
             
-            // 2. Converte o Base64 recebido em PDF e dispara o download automático
             if (data.pdf_base64) {
                 converterBase64ParaDownload(data.pdf_base64, `Convertido_Principal_${Date.now()}.pdf`);
             }
@@ -71,7 +118,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
     // ----------------------------------------------------
-    // ABA 2: CONVERSOR CNH (Apenas números, ignorando letras)
+    // ABA 2: CONVERSOR CNH (Apenas números)
     // ----------------------------------------------------
     const pdfInputCNH = document.getElementById("pdfInputCNH");
     const excelInputCNH = document.getElementById("excelInputCNH");
@@ -112,13 +159,10 @@ document.addEventListener("DOMContentLoaded", () => {
             atualizarProgresso(70, "Ignorando letras e preenchendo tabela CNH...", progressBarCNH, progressTextCNH, progressPercentCNH);
             
             const data = await response.json();
-
-            // 1. Preenche a tabela e as métricas específicas da CNH
             renderizarResultados(data, "CNH");
 
             atualizarProgresso(90, "Gerando PDF CNH convertido...", progressBarCNH, progressTextCNH, progressPercentCNH);
             
-            // 2. Converte o Base64 da CNH em PDF e dispara o download automático
             if (data.pdf_base64) {
                 converterBase64ParaDownload(data.pdf_base64, `Convertido_CNH_${Date.now()}.pdf`);
             }
