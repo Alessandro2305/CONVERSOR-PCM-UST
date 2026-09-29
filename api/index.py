@@ -1,25 +1,22 @@
-import base64
-import io
-import os
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+import base64
+import io
+import os
 import pandas as pd
 from pypdf import PdfReader, PdfWriter
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
 
 app = FastAPI()
 
-# Configuração de CORS para permitir requisições de qualquer origem (inclusive Railway)
+# Configuração de CORS atualizada para aceitar o Vercel e requisições locais
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Permite qualquer origem (ideal para testes ou produção aberta)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 @app.post("/converter/principal")
 async def converter_principal(

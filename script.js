@@ -1,8 +1,8 @@
 document.addEventListener("DOMContentLoaded", () => {
-    // Detecta automaticamente se está local ou no Railway
+    // Define se está local ou usa a URL oficial do Railway com HTTPS
     const API_URL = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" 
         ? "http://localhost:8000" 
-        : ""; // No Railway, usa rota relativa para o mesmo domínio
+        : "https://conversor-pcm-ust-production-8a82.up.railway.app";
 
     // ----------------------------------------------------
     // ABA 1: CONVERSOR PRINCIPAL (Alfanumérico: Letras e Números)
