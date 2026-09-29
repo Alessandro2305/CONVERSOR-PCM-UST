@@ -19,7 +19,7 @@ from pypdf import PdfReader, PdfWriter
 app = FastAPI(
     title="Conversor PCM UST",
     description="Conversor de código original para Código Item (SOL) e CNH",
-    version="1.1.1"
+    version="1.1.2"
 )
 
 app.add_middleware(
@@ -32,7 +32,7 @@ app.add_middleware(
 
 
 # ============================================================
-# NORMALIZAÇÃO
+# NORMALIZAÇÃO E REGRAS DE FABRICANTE
 # ============================================================
 
 def normalizar(valor):
@@ -75,6 +75,27 @@ def texto_limpo(valor):
     return str(valor).strip()
 
 
+def tratar_codigo_item(codigo_item, tipo="principal"):
+    """
+    Aplica regras específicas de formatação para os códigos.
+    Para CNH, remove letras pontuais/indesejadas conforme a regra e garante o sufixo CNH.
+    """
+    codigo = texto_limpo(codigo_item)
+    
+    if codigo.endswith(".0"):
+        codigo = codigo[:-2]
+        
+    if tipo == "cnh":
+        # Remove caracteres especiais e formata o padrão CNH
+        nums_e_letras = re.sub(r"[^A-Za-z0-9]", "", codigo)
+        # Evita duplicar o sufixo caso já venha na planilha
+        if not nums_e_letras.upper().endswith("CNH"):
+            return f"{nums_e_letras.upper()}CNH"
+        return nums_e_letras.upper()
+        
+    return codigo
+
+
 # ============================================================
 # EXCEL
 # ============================================================
@@ -98,12 +119,6 @@ def ler_planilha(excel_bytes):
 
 
 def validar_planilha_pcm(df):
-    """
-    Valida colunas para o Conversor Principal:
-      - Código Item
-      - Referencia
-      - Descrição
-    """
     colunas = {
         "codigo_item": None,
         "referencia": None,
@@ -140,11 +155,6 @@ def validar_planilha_pcm(df):
 
 
 def validar_planilha_cnh(df):
-    """
-    Valida colunas para o Conversor CNH.
-    Ajuste os nomes dos campos abaixo caso a planilha da CNH utilize 
-    cabeçalhos diferentes no Excel (ex: 'Codigo CNH', 'Item CNH', etc.).
-    """
     colunas = {
         "codigo_cnh": None,
         "referencia": None,
@@ -161,7 +171,6 @@ def validar_planilha_cnh(df):
         elif "DESCRICAO" in nome:
             colunas["descricao"] = coluna
 
-    # Fallback caso venha com nomenclaturas padrão caso não ache específico de CNH
     if not colunas["codigo_cnh"]:
         for coluna in df.columns:
             nome = normalizar(coluna)
@@ -189,9 +198,6 @@ def validar_planilha_cnh(df):
 
 
 def montar_indice(df, colunas, tipo="principal"):
-    """
-    Cria o índice de busca: referencia normalizada -> lista de registros.
-    """
     indice = defaultdict(list)
 
     coluna_codigo = colunas["codigo_item"] if tipo == "principal" else colunas["codigo_cnh"]
@@ -205,11 +211,7 @@ def montar_indice(df, colunas, tipo="principal"):
         if not referencia_normalizada:
             continue
 
-        codigo_item = texto_limpo(linha[coluna_codigo])
-
-        if codigo_item.endswith(".0"):
-            codigo_item = codigo_item[:-2]
-
+        codigo_item = tratar_codigo_item(linha[coluna_codigo], tipo=tipo)
         descricao = texto_limpo(linha[coluna_desc])
 
         registro = {
@@ -451,7 +453,7 @@ async def converter_cnh(
 
 @app.get("/")
 def inicio():
-    return {"sistema": "Conversor PCM UST", "status": "online", "versao": "1.1.1"}
+    return {"sistema": "Conversor PCM UST", "status": "online", "versao": "1.1.2"}
 
 
 @app.get("/health")

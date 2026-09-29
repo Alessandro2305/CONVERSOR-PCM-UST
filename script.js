@@ -208,13 +208,12 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // 6. DOWNLOAD DO PDF (Modificado para lidar com blobs ou base64 puros)
+    // 6. DOWNLOAD DO PDF
     function baixarPDF(respostaServidor, nomeArquivo) {
         if (!respostaServidor) return;
 
         try {
             let blob;
-            // Se o backend retornar um blob direto via application/json contendo base64
             if (typeof respostaServidor === "string") {
                 const conteudo = respostaServidor.includes(",")
                     ? respostaServidor.split(",")[1]
@@ -447,7 +446,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    // 9. PROCESSAMENTO DOS ARQUIVOS (Robustecido para JSON + PDF Opcional)
+    // 9. PROCESSAMENTO DOS ARQUIVOS
     async function processarArquivos(tipo) {
         const cnh = tipo === "cnh";
 
@@ -500,7 +499,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 body: formData
             });
 
-            // Captura o tipo de conteúdo para saber se veio JSON ou um arquivo PDF direto
             const contentType = response.headers.get("content-type") || "";
             let data;
             let pdfBlobResult = null;
@@ -512,9 +510,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     throw new Error("O servidor retornou uma resposta JSON inválida.");
                 }
             } else if (contentType.includes("application/pdf")) {
-                // Caso o endpoint envie o PDF binário diretamente na resposta (comum em FastAPI FileResponse)
                 pdfBlobResult = await response.blob();
-                // Simula um payload de sucesso padrão caso o backend não retorne os metadados JSON no body
                 data = {
                     total: 0,
                     convertidos: 0,
@@ -524,7 +520,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     mensagem: "PDF gerado com sucesso pelo servidor."
                 };
             } else {
-                // Tenta ler como texto caso venha corrompido
                 const textoResposta = await response.text();
                 try {
                     data = JSON.parse(textoResposta);
@@ -540,7 +535,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 throw new Error(detalhe || "Erro HTTP " + response.status);
             }
 
-            // Atribui dados ao objeto de controle global
             resultados[tipo] = data;
             renderizarResultados(data, tipo);
 
@@ -561,7 +555,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
             pararProgresso(tipo, true);
 
-            // Gerenciamento do download do PDF resultante
             const nomeGerado = (cnh ? "Convertido_CNH_" : "Convertido_Principal_") + Date.now() + ".pdf";
             
             if (pdfBlobResult) {
@@ -695,11 +688,11 @@ document.addEventListener("DOMContentLoaded", () => {
             ? [
                 ["pdfNameCNH", "Selecione o PDF..."],
                 ["excelNameCNH", "Selecione a planilha..."]
-            ]
+              ]
             : [
                 ["pdfName", "Selecione o PDF..."],
                 ["excelName", "Selecione a planilha..."]
-            ];
+              ];
 
         nomes.forEach(([id, texto]) => {
             const elemento = $(id);
@@ -714,7 +707,7 @@ document.addEventListener("DOMContentLoaded", () => {
         tamanhos.forEach((id) => definirTexto(id, ""));
 
         const checks = cnh ? ["pdfCheckCNH", "excelCheckCNH"] : ["pdfCheck", "excelCheck"];
-        checks.type?.forEach?.() || checks.forEach((id) => {
+        checks.forEach((id) => {
             const elemento = $(id);
             if (elemento) elemento.style.display = "none";
         });
