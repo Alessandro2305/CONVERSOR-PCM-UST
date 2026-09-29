@@ -1,11 +1,11 @@
+// =========================================================
+// CÓDIGO OTIMIZADO E CORRIGIDO
+// =========================================================
 
 document.addEventListener("DOMContentLoaded", () => {
     "use strict";
 
-    // =========================================================
     // 1. CONFIGURAÇÃO
-    // =========================================================
-
     const API_URL =
         window.location.hostname === "localhost" ||
         window.location.hostname === "127.0.0.1"
@@ -14,22 +14,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const CHAVE_HISTORICO = "pcm_ust_historico_v1";
 
-    // Resultados separados para cada conversor
     const resultados = {
         principal: null,
         cnh: null
     };
 
-    // Referências dos elementos HTML
     const $ = (id) => document.getElementById(id);
 
-    // =========================================================
     // 2. FUNÇÕES GERAIS
-    // =========================================================
-
     function definirTexto(id, texto) {
         const elemento = $(id);
-
         if (elemento) {
             elemento.textContent = texto ?? "";
         }
@@ -37,13 +31,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function formatarTamanho(bytes) {
         if (!bytes) return "0 Bytes";
-
         const unidades = ["Bytes", "KB", "MB", "GB"];
         const indice = Math.min(
             Math.floor(Math.log(bytes) / Math.log(1024)),
             unidades.length - 1
         );
-
         return (
             (bytes / Math.pow(1024, indice)).toFixed(2) +
             " " +
@@ -62,28 +54,11 @@ document.addEventListener("DOMContentLoaded", () => {
         return Number(numero || 0).toLocaleString("pt-BR");
     }
 
-    function escaparHTML(valor) {
-        return String(valor ?? "").replace(/[&<>"']/g, (caractere) => {
-            const entidades = {
-                "&": "&amp;",
-                "<": "&lt;",
-                ">": "&gt;",
-                '"': "&quot;",
-                "'": "&#039;"
-            };
-
-            return entidades[caractere];
-        });
-    }
-
     function mostrarErro(mensagem) {
         alert(mensagem || "Ocorreu um erro inesperado.");
     }
 
-    // =========================================================
     // 3. NAVEGAÇÃO DO MENU LATERAL
-    // =========================================================
-
     const botoesMenu = document.querySelectorAll(".btn-caixa");
 
     function ativarAba(nomeAba, atualizarMenu = true) {
@@ -117,26 +92,20 @@ document.addEventListener("DOMContentLoaded", () => {
     botoesMenu.forEach((botao) => {
         botao.addEventListener("click", () => {
             const nomeAba = botao.dataset.aba;
-
             if (nomeAba) {
                 ativarAba(nomeAba);
             }
         });
     });
 
-    // Inicializa a aba selecionada no HTML
     const abaInicial = document.querySelector(".aba-conteudo.active");
-
     if (abaInicial) {
         ativarAba(abaInicial.id);
     } else if ($("aba-conversor")) {
         ativarAba("aba-conversor");
     }
 
-    // =========================================================
     // 4. UPLOAD DOS ARQUIVOS
-    // =========================================================
-
     function configurarUpload(inputId, nomeId, tamanhoId, checkId) {
         const input = $(inputId);
         const nome = $(nomeId);
@@ -170,29 +139,12 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Conversor principal
     configurarUpload("pdfInput", "pdfName", "pdfSize", "pdfCheck");
     configurarUpload("excelInput", "excelName", "excelSize", "excelCheck");
+    configurarUpload("pdfInputCNH", "pdfNameCNH", "pdfSizeCNH", "pdfCheckCNH");
+    configurarUpload("excelInputCNH", "excelNameCNH", "excelSizeCNH", "excelCheckCNH");
 
-    // Conversor CNH
-    configurarUpload(
-        "pdfInputCNH",
-        "pdfNameCNH",
-        "pdfSizeCNH",
-        "pdfCheckCNH"
-    );
-
-    configurarUpload(
-        "excelInputCNH",
-        "excelNameCNH",
-        "excelSizeCNH",
-        "excelCheckCNH"
-    );
-
-    // =========================================================
     // 5. BARRA DE PROGRESSO
-    // =========================================================
-
     const progresso = {
         principal: null,
         cnh: null
@@ -200,7 +152,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function atualizarProgresso(tipo, percentual, mensagem) {
         const sufixo = tipo === "cnh" ? "CNH" : "";
-
         const container = $("progressContainer" + sufixo);
         const barra = $("progressBar" + sufixo);
         const texto = $("progressText" + sufixo);
@@ -212,7 +163,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (barra) barra.style.width = valor + "%";
         if (texto && mensagem) texto.textContent = mensagem;
-
         if (porcentagem) {
             porcentagem.textContent = Math.round(valor) + "%";
         }
@@ -220,7 +170,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function iniciarProgresso(tipo) {
         pararProgresso(tipo);
-
         atualizarProgresso(tipo, 5, "Enviando arquivos para processamento...");
 
         let percentual = 5;
@@ -228,7 +177,6 @@ document.addEventListener("DOMContentLoaded", () => {
         progresso[tipo] = setInterval(() => {
             if (percentual < 90) {
                 percentual += percentual < 40 ? 8 : 3;
-
                 atualizarProgresso(
                     tipo,
                     Math.min(percentual, 90),
@@ -255,42 +203,43 @@ document.addEventListener("DOMContentLoaded", () => {
         const sufixo = tipo === "cnh" ? "CNH" : "";
         const container = $("progressContainer" + sufixo);
 
-        // Mantém o resultado de sucesso visível por um momento.
         if (!sucesso && container) {
             container.style.display = "none";
         }
     }
 
-    // =========================================================
-    // 6. DOWNLOAD DO PDF
-    // =========================================================
-
-    function baixarPDF(base64, nomeArquivo) {
-        if (!base64) return;
+    // 6. DOWNLOAD DO PDF (Modificado para lidar com blobs ou base64 puros)
+    function baixarPDF(respostaServidor, nomeArquivo) {
+        if (!respostaServidor) return;
 
         try {
-            const conteudo = base64.includes(",")
-                ? base64.split(",")[1]
-                : base64;
+            let blob;
+            // Se o backend retornar um blob direto via application/json contendo base64
+            if (typeof respostaServidor === "string") {
+                const conteudo = respostaServidor.includes(",")
+                    ? respostaServidor.split(",")[1]
+                    : respostaServidor;
 
-            const binario = atob(conteudo);
-            const tamanho = 1024 * 512;
-            const partes = [];
+                const binario = atob(conteudo);
+                const tamanho = 1024 * 512;
+                const partes = [];
 
-            for (let inicio = 0; inicio < binario.length; inicio += tamanho) {
-                const trecho = binario.slice(inicio, inicio + tamanho);
-                const bytes = new Uint8Array(trecho.length);
+                for (let inicio = 0; inicio < binario.length; inicio += tamanho) {
+                    const trecho = binario.slice(inicio, inicio + tamanho);
+                    const bytes = new Uint8Array(trecho.length);
 
-                for (let i = 0; i < trecho.length; i++) {
-                    bytes[i] = trecho.charCodeAt(i);
+                    for (let i = 0; i < trecho.length; i++) {
+                        bytes[i] = trecho.charCodeAt(i);
+                    }
+                    partes.push(bytes);
                 }
 
-                partes.push(bytes);
+                blob = new Blob(partes, { type: "application/pdf" });
+            } else if (respostaServidor instanceof Blob) {
+                blob = respostaServidor;
+            } else {
+                throw new Error("Formato de PDF inválido recebido.");
             }
-
-            const blob = new Blob(partes, {
-                type: "application/pdf"
-            });
 
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
@@ -302,7 +251,6 @@ document.addEventListener("DOMContentLoaded", () => {
             link.click();
             link.remove();
 
-            // Aguarda o navegador iniciar o download antes de liberar a URL.
             setTimeout(() => URL.revokeObjectURL(url), 1000);
         } catch (erro) {
             console.error("Erro ao gerar o download do PDF:", erro);
@@ -310,21 +258,15 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // =========================================================
     // 7. RENDERIZAÇÃO DOS RESULTADOS
-    // =========================================================
-
     function obterClasseStatus(status) {
         const valor = String(status || "").toLowerCase();
-
         if (valor.includes("não encontrado") || valor.includes("nao encontrado")) {
             return "badge-nao-encontrado";
         }
-
         if (valor.includes("pendente")) {
             return "badge-pendente";
         }
-
         return "badge-convertido";
     }
 
@@ -343,10 +285,7 @@ document.addEventListener("DOMContentLoaded", () => {
         definirTexto("mTotal" + sufixo, formatarNumero(total));
         definirTexto("mConvertidos" + sufixo, formatarNumero(convertidos));
         definirTexto("mPendentes" + sufixo, formatarNumero(pendentes));
-        definirTexto(
-            "mNaoEncontrados" + sufixo,
-            formatarNumero(naoEncontrados)
-        );
+        definirTexto("mNaoEncontrados" + sufixo, formatarNumero(naoEncontrados));
 
         const itens = Array.isArray(data.itens) ? data.itens : [];
 
@@ -357,7 +296,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (!tbody) return;
-
         tbody.innerHTML = "";
 
         if (itens.length === 0) {
@@ -367,12 +305,10 @@ document.addEventListener("DOMContentLoaded", () => {
             celula.colSpan = 4;
             celula.style.textAlign = "center";
             celula.style.color = "#64748b";
-            celula.textContent =
-                data.mensagem || "Nenhum item encontrado.";
+            celula.textContent = data.mensagem || "Nenhum item encontrado.";
 
             linha.appendChild(celula);
             tbody.appendChild(linha);
-
             return;
         }
 
@@ -381,25 +317,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const celulaStatus = document.createElement("td");
             const badge = document.createElement("span");
-
             badge.className = obterClasseStatus(item.status);
             badge.textContent = item.status || "Sem status";
-
             celulaStatus.appendChild(badge);
 
             const celulaOriginal = document.createElement("td");
             const codigoOriginal = document.createElement("strong");
-
             codigoOriginal.textContent = item.codigo_original ?? "";
             celulaOriginal.appendChild(codigoOriginal);
 
             const celulaConvertido = document.createElement("td");
             const codigoConvertido = document.createElement("span");
-
             codigoConvertido.style.color = "#0284c7";
             codigoConvertido.style.fontWeight = "bold";
             codigoConvertido.textContent = item.codigo_convertido ?? "";
-
             celulaConvertido.appendChild(codigoConvertido);
 
             const celulaDescricao = document.createElement("td");
@@ -416,15 +347,11 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // =========================================================
     // 8. HISTÓRICO DE PROCESSAMENTOS
-    // =========================================================
-
     function carregarHistorico() {
         try {
             const dados = localStorage.getItem(CHAVE_HISTORICO);
             const historico = dados ? JSON.parse(dados) : [];
-
             return Array.isArray(historico) ? historico : [];
         } catch (erro) {
             console.error("Erro ao ler histórico:", erro);
@@ -435,15 +362,11 @@ document.addEventListener("DOMContentLoaded", () => {
     function salvarHistorico(registro) {
         try {
             const historico = carregarHistorico();
-
             historico.unshift(registro);
-
-            // Limita a 500 registros para evitar crescimento excessivo.
             localStorage.setItem(
                 CHAVE_HISTORICO,
                 JSON.stringify(historico.slice(0, 500))
             );
-
             atualizarHistorico();
         } catch (erro) {
             console.error("Erro ao salvar histórico:", erro);
@@ -465,20 +388,12 @@ document.addEventListener("DOMContentLoaded", () => {
             tempoTotalSegundos += Number(registro.tempo_segundos || 0);
         });
 
-        definirTexto(
-            "historicoTotalConvertidos",
-            formatarNumero(totalConvertidos)
-        );
+        definirTexto("historicoTotalConvertidos", formatarNumero(totalConvertidos));
 
         const minutos = Math.round(tempoTotalSegundos / 60);
-
-        definirTexto(
-            "historicoTempoTotal",
-            formatarNumero(minutos) + " min"
-        );
+        definirTexto("historicoTempoTotal", formatarNumero(minutos) + " min");
 
         if (!tbody) return;
-
         tbody.innerHTML = "";
 
         if (historico.length === 0) {
@@ -492,7 +407,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
             linha.appendChild(celula);
             tbody.appendChild(linha);
-
             return;
         }
 
@@ -520,12 +434,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const btnLimparHistorico = $("btnLimparHistorico");
-
     btnLimparHistorico?.addEventListener("click", () => {
         if (!confirm("Deseja apagar todo o histórico deste navegador?")) {
             return;
         }
-
         try {
             localStorage.removeItem(CHAVE_HISTORICO);
             atualizarHistorico();
@@ -535,16 +447,12 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    // =========================================================
-    // 9. PROCESSAMENTO DOS ARQUIVOS
-    // =========================================================
-
+    // 9. PROCESSAMENTO DOS ARQUIVOS (Robustecido para JSON + PDF Opcional)
     async function processarArquivos(tipo) {
         const cnh = tipo === "cnh";
 
         const pdfInput = $(cnh ? "pdfInputCNH" : "pdfInput");
         const excelInput = $(cnh ? "excelInputCNH" : "excelInput");
-
         const botao = $(cnh ? "btnProcessarCNH" : "btnProcessar");
 
         const arquivoPDF = pdfInput?.files?.[0];
@@ -565,28 +473,18 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         const nomeExcel = arquivoExcel.name.toLowerCase();
-
-        if (
-            !nomeExcel.endsWith(".xlsx") &&
-            !nomeExcel.endsWith(".xls")
-        ) {
+        if (!nomeExcel.endsWith(".xlsx") && !nomeExcel.endsWith(".xls")) {
             mostrarErro("A planilha precisa estar no formato .xlsx ou .xls.");
             return;
         }
 
-        const endpoint = cnh
-            ? "/converter/cnh"
-            : "/converter/principal";
-
+        const endpoint = cnh ? "/converter/cnh" : "/converter/principal";
         const formData = new FormData();
 
         formData.append("file_pdf", arquivoPDF);
         formData.append("file_excel", arquivoExcel);
 
-        const textoOriginal = cnh
-            ? "PROCESSAR ARQUIVOS CNH"
-            : "PROCESSAR ARQUIVOS";
-
+        const textoOriginal = cnh ? "PROCESSAR ARQUIVOS CNH" : "PROCESSAR ARQUIVOS";
         const inicio = performance.now();
 
         if (botao) {
@@ -602,34 +500,48 @@ document.addEventListener("DOMContentLoaded", () => {
                 body: formData
             });
 
+            // Captura o tipo de conteúdo para saber se veio JSON ou um arquivo PDF direto
+            const contentType = response.headers.get("content-type") || "";
             let data;
+            let pdfBlobResult = null;
 
-            try {
-                data = await response.json();
-            } catch {
-                throw new Error(
-                    "O servidor retornou uma resposta inválida. Verifique o backend."
-                );
+            if (contentType.includes("application/json")) {
+                try {
+                    data = await response.json();
+                } catch {
+                    throw new Error("O servidor retornou uma resposta JSON inválida.");
+                }
+            } else if (contentType.includes("application/pdf")) {
+                // Caso o endpoint envie o PDF binário diretamente na resposta (comum em FastAPI FileResponse)
+                pdfBlobResult = await response.blob();
+                // Simula um payload de sucesso padrão caso o backend não retorne os metadados JSON no body
+                data = {
+                    total: 0,
+                    convertidos: 0,
+                    pendentes: 0,
+                    nao_encontrados: 0,
+                    itens: [],
+                    mensagem: "PDF gerado com sucesso pelo servidor."
+                };
+            } else {
+                // Tenta ler como texto caso venha corrompido
+                const textoResposta = await response.text();
+                try {
+                    data = JSON.parse(textoResposta);
+                } catch {
+                    throw new Error("O servidor retornou um formato desconhecido: " + contentType);
+                }
             }
 
             if (!response.ok) {
                 const detalhe = typeof data.detail === "string"
                     ? data.detail
                     : JSON.stringify(data.detail || data);
-
-                throw new Error(
-                    detalhe || "Erro HTTP " + response.status
-                );
+                throw new Error(detalhe || "Erro HTTP " + response.status);
             }
 
-            if (!Array.isArray(data.itens)) {
-                throw new Error(
-                    "O servidor não retornou a lista de itens esperada."
-                );
-            }
-
+            // Atribui dados ao objeto de controle global
             resultados[tipo] = data;
-
             renderizarResultados(data, tipo);
 
             const duracao = (performance.now() - inicio) / 1000;
@@ -637,25 +549,25 @@ document.addEventListener("DOMContentLoaded", () => {
             salvarHistorico({
                 data: new Date().toISOString(),
                 tipo: cnh ? "CNH" : "Principal",
-                total: Number(data.total ?? data.itens.length),
+                total: Number(data.total ?? data.itens?.length ?? 0),
                 convertidos: Number(data.convertidos ?? 0),
                 pendentes: Number(data.pendentes ?? 0),
                 nao_encontrados: Number(data.nao_encontrados ?? 0),
                 tempo_segundos: duracao,
                 nome_pdf: arquivoPDF.name,
                 nome_excel: arquivoExcel.name,
-                itens: data.itens
+                itens: data.itens || []
             });
 
             pararProgresso(tipo, true);
 
-            if (data.pdf_base64) {
-                baixarPDF(
-                    data.pdf_base64,
-                    (cnh ? "Convertido_CNH_" : "Convertido_Principal_") +
-                        Date.now() +
-                        ".pdf"
-                );
+            // Gerenciamento do download do PDF resultante
+            const nomeGerado = (cnh ? "Convertido_CNH_" : "Convertido_Principal_") + Date.now() + ".pdf";
+            
+            if (pdfBlobResult) {
+                baixarPDF(pdfBlobResult, nomeGerado);
+            } else if (data.pdf_base64) {
+                baixarPDF(data.pdf_base64, nomeGerado);
             }
 
             alert(
@@ -663,21 +575,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 "Total de itens: " + formatarNumero(data.total) + "\n" +
                 "Convertidos: " + formatarNumero(data.convertidos) + "\n" +
                 "Pendentes: " + formatarNumero(data.pendentes) + "\n" +
-                "Não encontrados: " +
-                    formatarNumero(data.nao_encontrados)
+                "Não encontrados: " + formatarNumero(data.nao_encontrados)
             );
 
         } catch (erro) {
             console.error("Erro no processamento:", erro);
-
             pararProgresso(tipo);
-
             mostrarErro(
                 "Falha no processamento:\n" +
                 (erro.message || "Erro desconhecido") +
                 "\n\nVerifique a conexão com a API e os arquivos enviados."
             );
-
         } finally {
             if (botao) {
                 botao.disabled = false;
@@ -694,25 +602,18 @@ document.addEventListener("DOMContentLoaded", () => {
         processarArquivos("cnh");
     });
 
-    // =========================================================
     // 10. EXPORTAÇÃO PARA EXCEL
-    // =========================================================
-
     function exportarExcel(tipo) {
         const cnh = tipo === "cnh";
         const dados = resultados[tipo];
 
         if (!dados || !Array.isArray(dados.itens) || dados.itens.length === 0) {
-            mostrarErro(
-                "Não há resultados para exportar. Processe os arquivos primeiro."
-            );
+            mostrarErro("Não há resultados para exportar. Processe os arquivos primeiro.");
             return;
         }
 
         if (typeof XLSX === "undefined") {
-            mostrarErro(
-                "A biblioteca XLSX não foi carregada. Verifique a conexão com a internet e a inclusão do arquivo xlsx.full.min.js no HTML."
-            );
+            mostrarErro("A biblioteca XLSX não foi carregada. Verifique a inclusão do script xlsx.full.min.js.");
             return;
         }
 
@@ -726,7 +627,6 @@ document.addEventListener("DOMContentLoaded", () => {
             }));
 
             const planilha = XLSX.utils.json_to_sheet(linhas);
-
             planilha["!cols"] = [
                 { wch: 20 },
                 { wch: 25 },
@@ -753,18 +653,8 @@ document.addEventListener("DOMContentLoaded", () => {
             ];
 
             const livro = XLSX.utils.book_new();
-
-            XLSX.utils.book_append_sheet(
-                livro,
-                resumo,
-                "Resumo"
-            );
-
-            XLSX.utils.book_append_sheet(
-                livro,
-                planilha,
-                "Resultados"
-            );
+            XLSX.utils.book_append_sheet(livro, resumo, "Resumo");
+            XLSX.utils.book_append_sheet(livro, planilha, "Resultados");
 
             const nomeArquivo =
                 (cnh ? "Resultado_CNH_" : "Resultado_Principal_") +
@@ -772,7 +662,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 ".xlsx";
 
             XLSX.writeFile(livro, nomeArquivo);
-
         } catch (erro) {
             console.error("Erro na exportação:", erro);
             mostrarErro("Não foi possível gerar a planilha Excel.");
@@ -787,31 +676,18 @@ document.addEventListener("DOMContentLoaded", () => {
         exportarExcel("cnh");
     });
 
-    // =========================================================
     // 11. LIMPAR CONVERSOR
-    // =========================================================
-
     function limparConversor(tipo) {
         const cnh = tipo === "cnh";
         const sufixo = cnh ? "CNH" : "";
+        const idsArquivos = cnh ? ["pdfInputCNH", "excelInputCNH"] : ["pdfInput", "excelInput"];
 
-        const prefixoInput = cnh ? "CNH" : "";
-
-        const idsArquivos = cnh
-            ? ["pdfInputCNH", "excelInputCNH"]
-            : ["pdfInput", "excelInput"];
-
-        if (
-            !confirm(
-                "Deseja limpar os arquivos e resultados deste conversor?"
-            )
-        ) {
+        if (!confirm("Deseja limpar os arquivos e resultados deste conversor?")) {
             return;
         }
 
         idsArquivos.forEach((id) => {
             const input = $(id);
-
             if (input) input.value = "";
         });
 
@@ -827,7 +703,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
         nomes.forEach(([id, texto]) => {
             const elemento = $(id);
-
             if (elemento) {
                 elemento.textContent = texto;
                 elemento.style.color = "";
@@ -835,26 +710,18 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         });
 
-        const tamanhos = cnh
-            ? ["pdfSizeCNH", "excelSizeCNH"]
-            : ["pdfSize", "excelSize"];
-
+        const tamanhos = cnh ? ["pdfSizeCNH", "excelSizeCNH"] : ["pdfSize", "excelSize"];
         tamanhos.forEach((id) => definirTexto(id, ""));
 
-        const checks = cnh
-            ? ["pdfCheckCNH", "excelCheckCNH"]
-            : ["pdfCheck", "excelCheck"];
-
-        checks.forEach((id) => {
+        const checks = cnh ? ["pdfCheckCNH", "excelCheckCNH"] : ["pdfCheck", "excelCheck"];
+        checks.type?.forEach?.() || checks.forEach((id) => {
             const elemento = $(id);
-
             if (elemento) elemento.style.display = "none";
         });
 
         resultados[tipo] = null;
 
         const tbody = $("tabelaDados" + sufixo);
-
         if (tbody) tbody.innerHTML = "";
 
         definirTexto("mTotal" + sufixo, "0");
@@ -864,12 +731,9 @@ document.addEventListener("DOMContentLoaded", () => {
         definirTexto("contadorItens" + sufixo, "0 itens identificados");
 
         pararProgresso(tipo);
-
-        // Reinicia a barra visual.
         atualizarProgresso(tipo, 0, "Aguardando arquivos...");
 
         const container = $("progressContainer" + sufixo);
-
         if (container) container.style.display = "none";
     }
 
@@ -881,17 +745,10 @@ document.addEventListener("DOMContentLoaded", () => {
         limparConversor("cnh");
     });
 
-    // =========================================================
     // 12. INICIALIZAÇÃO DO HISTÓRICO
-    // =========================================================
-
     atualizarHistorico();
 
-    // =========================================================
     // 13. INFORMAÇÕES PARA DIAGNÓSTICO
-    // =========================================================
-
     console.info("Conversor PCM UST iniciado.");
     console.info("API configurada:", API_URL);
-
 });
