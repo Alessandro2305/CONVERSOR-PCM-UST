@@ -1,76 +1,20 @@
 document.addEventListener("DOMContentLoaded", () => {
-    // Define se está local ou usa a URL oficial do Railway com HTTPS
+    // URL do seu Back-end no Railway com HTTPS
     const API_URL = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" 
         ? "http://localhost:8000" 
         : "https://conversor-pcm-ust-production-8a82.up.railway.app";
 
     // ----------------------------------------------------
-    // 1. LÓGICA DE NAVEGAÇÃO ENTRE ABAS (MENU LATERAL)
+    // ABA 1: CONVERSOR PRINCIPAL
     // ----------------------------------------------------
-    const menuLinks = document.querySelectorAll('.sidebar-menu a, .menu-item'); // Ajuste conforme suas classes do HTML
-    // Se preferir focar pelos IDs das seções de conteúdo, certifique-se que elas existem no HTML.
-    // Vamos mapear os itens do menu lateral padrão:
-    const sidebarLinks = document.querySelectorAll("aside a, .sidebar a");
-    
-    // Se houver seções de conteúdo separadas por ID (ex: #secao-principal, #secao-cnh)
-    sidebarLinks.forEach(link => {
-        link.addEventListener("click", (e) => {
-            const targetId = link.getAttribute("href");
-            if (targetId && targetId.startsWith("#")) {
-                e.preventDefault();
-                // Remove active de todos os links e oculta seções
-                sidebarLinks.forEach(l => l.parentElement.classList.remove("active"));
-                link.parentElement.classList.add("active");
-
-                // Alterna a visibilidade das abas principais se existirem no HTML
-                const targetSecao = document.querySelector(targetId);
-                if (targetSecao) {
-                    document.querySelectorAll(".conteudo-secao").forEach(sec => sec.style.display = "none");
-                    targetSecao.style.display = "block";
-                }
-            }
-        });
-    });
-
-    // ----------------------------------------------------
-    // 2. SELEÇÃO DE ARQUIVOS (CLIQUE NA CAIXA ABRE O INPUT FILE)
-    // ----------------------------------------------------
-    configurarCardUpload("pdfInput", "cardPdfPrincipal", "nomePdfPrincipal");
-    configurarCardUpload("excelInput", "cardExcelPrincipal", "nomeExcelPrincipal");
-    
-    configurarCardUpload("pdfInputCNH", "cardPdfCNH", "nomePdfCNH");
-    configurarCardUpload("excelInputCNH", "cardExcelCNH", "nomeExcelCNH");
-
-    function configurarCardUpload(inputId, cardId, labelId) {
-        const input = document.getElementById(inputId);
-        // Se o card não tiver ID específico, podemos buscar pelo input pai ou associar por clique
-        if (input) {
-            input.addEventListener("change", (e) => {
-                const fileName = e.target.files[0]?.name || "Selecione o arquivo...";
-                const label = document.getElementById(labelId);
-                if (label) label.textContent = fileName;
-            });
-        }
-    }
-
-
-    // ----------------------------------------------------
-    // ABA 1: CONVERSOR PRINCIPAL (Alfanumérico)
-    // ----------------------------------------------------
-    const pdfInputPrincipal = document.getElementById("pdfInput");
-    const excelInputPrincipal = document.getElementById("excelInput");
     const btnProcessarPrincipal = document.getElementById("btnProcessar");
-    const progressContainerPrincipal = document.getElementById("progressContainer");
-    const progressBarPrincipal = document.getElementById("progressBar");
-    const progressTextPrincipal = document.getElementById("progressText");
-    const progressPercentPrincipal = document.getElementById("progressPercent");
-
+    
     btnProcessarPrincipal?.addEventListener("click", async () => {
-        const filePdf = pdfInputPrincipal?.files[0];
-        const fileExcel = excelInputPrincipal?.files[0];
+        const filePdf = document.getElementById("pdfInput")?.files[0];
+        const fileExcel = document.getElementById("excelInput")?.files[0];
 
         if (!filePdf || !fileExcel) {
-            alert("Por favor, selecione o PDF e a planilha de conversão principal!");
+            alert("Por favor, selecione o arquivo PDF e a planilha Excel!");
             return;
         }
 
@@ -79,9 +23,7 @@ document.addEventListener("DOMContentLoaded", () => {
         formData.append("file_excel", fileExcel);
 
         btnProcessarPrincipal.disabled = true;
-        if (progressContainerPrincipal) progressContainerPrincipal.style.display = "block";
-        atualizarProgresso(10, "Enviando arquivos para o Conversor Principal...", progressBarPrincipal, progressTextPrincipal, progressPercentPrincipal);
-
+        
         try {
             const response = await fetch(`${API_URL}/converter/principal`, {
                 method: "POST",
@@ -93,44 +35,31 @@ document.addEventListener("DOMContentLoaded", () => {
                 throw new Error(errData.detail || "Erro no processamento principal.");
             }
 
-            atualizarProgresso(70, "Processando dados e gerando tabela...", progressBarPrincipal, progressTextPrincipal, progressPercentPrincipal);
-            
             const data = await response.json();
             renderizarResultados(data, "");
 
-            atualizarProgresso(90, "Gerando PDF convertido...", progressBarPrincipal, progressTextPrincipal, progressPercentPrincipal);
-            
             if (data.pdf_base64) {
                 converterBase64ParaDownload(data.pdf_base64, `Convertido_Principal_${Date.now()}.pdf`);
             }
 
-            atualizarProgresso(100, "Processamento concluído com sucesso!", progressBarPrincipal, progressTextPrincipal, progressPercentPrincipal);
-            await new Promise(r => setTimeout(r, 1000));
+            alert("Processamento concluído com sucesso!");
 
         } catch (error) {
             alert(`Falha: ${error.message}`);
-            if (progressTextPrincipal) progressTextPrincipal.textContent = "Falha no processamento.";
         } finally {
             btnProcessarPrincipal.disabled = false;
-            setTimeout(() => { if (progressContainerPrincipal) progressContainerPrincipal.style.display = "none"; }, 1500);
         }
     });
 
 
     // ----------------------------------------------------
-    // ABA 2: CONVERSOR CNH (Apenas números)
+    // ABA 2: CONVERSOR CNH
     // ----------------------------------------------------
-    const pdfInputCNH = document.getElementById("pdfInputCNH");
-    const excelInputCNH = document.getElementById("excelInputCNH");
     const btnProcessarCNH = document.getElementById("btnProcessarCNH");
-    const progressContainerCNH = document.getElementById("progressContainerCNH");
-    const progressBarCNH = document.getElementById("progressBarCNH");
-    const progressTextCNH = document.getElementById("progressTextCNH");
-    const progressPercentCNH = document.getElementById("progressPercentCNH");
 
     btnProcessarCNH?.addEventListener("click", async () => {
-        const filePdf = pdfInputCNH?.files[0];
-        const fileExcel = excelInputCNH?.files[0];
+        const filePdf = document.getElementById("pdfInputCNH")?.files[0];
+        const fileExcel = document.getElementById("excelInputCNH")?.files[0];
 
         if (!filePdf || !fileExcel) {
             alert("Por favor, selecione o PDF e a planilha para a CNH!");
@@ -142,8 +71,6 @@ document.addEventListener("DOMContentLoaded", () => {
         formData.append("file_excel", fileExcel);
 
         btnProcessarCNH.disabled = true;
-        if (progressContainerCNH) progressContainerCNH.style.display = "block";
-        atualizarProgresso(10, "Enviando arquivos para o Conversor CNH...", progressBarCNH, progressTextCNH, progressPercentCNH);
 
         try {
             const response = await fetch(`${API_URL}/converter/cnh`, {
@@ -156,26 +83,19 @@ document.addEventListener("DOMContentLoaded", () => {
                 throw new Error(errData.detail || "Erro no processamento CNH.");
             }
 
-            atualizarProgresso(70, "Ignorando letras e preenchendo tabela CNH...", progressBarCNH, progressTextCNH, progressPercentCNH);
-            
             const data = await response.json();
             renderizarResultados(data, "CNH");
 
-            atualizarProgresso(90, "Gerando PDF CNH convertido...", progressBarCNH, progressTextCNH, progressPercentCNH);
-            
             if (data.pdf_base64) {
                 converterBase64ParaDownload(data.pdf_base64, `Convertido_CNH_${Date.now()}.pdf`);
             }
 
-            atualizarProgresso(100, "Processamento CNH concluído com sucesso!", progressBarCNH, progressTextCNH, progressPercentCNH);
-            await new Promise(r => setTimeout(r, 1000));
+            alert("Processamento CNH concluído com sucesso!");
 
         } catch (error) {
             alert(`Falha: ${error.message}`);
-            if (progressTextCNH) progressTextCNH.textContent = "Falha no processamento CNH.";
         } finally {
             btnProcessarCNH.disabled = false;
-            setTimeout(() => { if (progressContainerCNH) progressContainerCNH.style.display = "none"; }, 1500);
         }
     });
 
@@ -183,12 +103,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // ----------------------------------------------------
     // FUNÇÕES AUXILIARES
     // ----------------------------------------------------
-    function atualizarProgresso(porcentagem, texto, barra, txtStatus, badge) {
-        if (barra) barra.style.width = porcentagem + "%";
-        if (txtStatus) txtStatus.textContent = texto;
-        if (badge) badge.textContent = porcentagem + "%";
-    }
-
     function converterBase64ParaDownload(base64Data, nomeArquivo) {
         const byteCharacters = atob(base64Data);
         const byteNumbers = new Array(byteCharacters.length);
